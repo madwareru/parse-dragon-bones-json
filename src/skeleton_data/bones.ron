@@ -1,0 +1,89 @@
+[
+    BoneSegment (
+        name: "root",
+        id: 0,
+        parent_id: None,
+        pos: [-0.1178, 0.0], rotation: 0.0009896755, origin:  [-0.1178, 0.0, 1.0], direction:  [-0.1178, 0.0, 1.0], mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll",
+        id: 1,
+        parent_id: Some(0),
+        pos: [-0.017799996, 33.45],
+        rotation: -1.571257,
+        origin:  [-0.017799996, 33.45, 1.0],
+        direction:  [-0.0366874, -7.5499954, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll1",
+        id: 2,
+        parent_id:
+        Some(1),
+        pos: [41.351, -0.3491],
+        rotation: 2.114032,
+        origin:  [0.0, 0.0, 1.0],
+        direction:  [42.0, 0.0, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll2",
+        id: 3,
+        parent_id: Some(1),
+        pos: [40.8361, 31.899601],
+        rotation: -3.6549687,
+        origin:  [40.8361, 31.899601, 1.0],
+        direction:  [14.70336, 46.63323, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll3",
+        id: 4,
+        parent_id: Some(1),
+        pos: [0.4893, -16.0989],
+        rotation: 2.9443686,
+        origin:  [0.0, 0.0, 1.0],
+        direction:  [21.0, 0.0, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll4",
+        id: 5,
+        parent_id: Some(1),
+        pos: [0.4068, 17.701],
+        rotation: -2.9593713,
+        origin:  [0.0, 0.0, 1.0],
+        direction:  [21.0, 0.0, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll5",
+        id: 6,
+        parent_id: Some(1),
+        pos: [44.6323, 33.4589],
+        rotation: -1.5631114,
+        origin:  [44.6323, 33.4589, 1.0],
+        direction:  [44.793682, 12.45952, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll6",
+        id: 7,
+        parent_id: Some(6),
+        pos: [21.4502, -0.0012],
+        rotation: 0.0334754,
+        origin:  [0.0, 0.0, 1.0],
+        direction:  [20.0, 0.0, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    ),
+    BoneSegment (
+        name: "char_doll7",
+        id: 8,
+        parent_id: Some(3),
+        pos: [30.6516, 0.9002],
+        rotation: 2.0302541,
+        origin:  [0.0, 0.0, 1.0],
+        direction:  [36.0, 0.0, 1.0],
+        mat:  [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    )
+]
