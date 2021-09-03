@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use parse_dragon_bones_json::skeleton_data::RawSkeletonData;
 use parse_dragon_bones_json::skeleton_data::armature::RawArmatureData;
-use parse_dragon_bones_json::skeleton_data::transform::PurifiedTransform;
+use parse_dragon_bones_json::skeleton_data::transform::{PurifiedTransform, RawTransform};
 use parse_dragon_bones_json::skeleton_data::skin::{RawDisplay, PurifiedMeshData};
 use std::collections::{HashMap, VecDeque};
 use std::ops::{Mul, Add};
@@ -11,7 +11,7 @@ use nalgebra::{Point3, Matrix3};
 use nalgebra::LU;
 use std::sync::Arc;
 use std::borrow::Borrow;
-use parse_dragon_bones_json::atlas_data::Atlas;
+use parse_dragon_bones_json::atlas_data::{Atlas, SubTexture};
 
 const COLORS: &[Color] = &[
     GOLD,
@@ -55,7 +55,7 @@ impl BufferedDrawBatcher {
         self.vertex_buffer.extend(vertices);
         self.index_buffer.extend(indices);
 
-        let mut quad_gl = unsafe {
+        let quad_gl = unsafe {
             let InternalGlContext { quad_gl, .. } = get_internal_gl();
             quad_gl
         };
@@ -70,6 +70,7 @@ pub trait Drawable {
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
+        pose_matrices: &[Matrix3<f32>],
         diff_matrices: &[nalgebra::Matrix3<f32>],
         position_x: f32,
         position_y: f32,
@@ -80,13 +81,22 @@ pub trait Drawable {
 #[derive(Clone)]
 pub struct MeshDrawable {
     mesh_data: Arc<PurifiedMeshData<u16>>,
-    texture: Texture2D
+    texture: Texture2D,
+    atlas_size: [f32; 2],
+    atlas_sub_texture: SubTexture,
 }
 impl MeshDrawable {
-    pub fn new(mesh_data: &PurifiedMeshData<u16>, texture: Texture2D) -> Self {
+    pub fn new(
+        mesh_data: &PurifiedMeshData<u16>,
+        texture: Texture2D,
+        atlas_size: [f32; 2],
+        atlas_sub_texture: SubTexture
+    ) -> Self {
         Self {
             mesh_data: Arc::new(mesh_data.clone()),
-            texture
+            texture,
+            atlas_size,
+            atlas_sub_texture
         }
     }
 }
@@ -94,6 +104,7 @@ impl Drawable for MeshDrawable {
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
+        _pose_matrices: &[Matrix3<f32>],
         diff_matrices: &[nalgebra::Matrix3<f32>],
         position_x: f32,
         position_y: f32,
@@ -107,7 +118,7 @@ impl Drawable for MeshDrawable {
                     let pt: Point3<f32> = nalgebra::Point3::new(v[0], v[1], 1.0);
                     let vert_new = diff_matrices.iter()
                         .zip(w)
-                        .filter(|(diff, &weight)| weight != 0.0)
+                        .filter(|(_, &weight)| weight != 0.0)
                         .map(|(diff, &weight)| weight * (diff * pt))
                         .fold(
                             nalgebra::Point3::origin(),
@@ -118,14 +129,150 @@ impl Drawable for MeshDrawable {
                         position_x + vert_new.x * scale,
                         position_y + vert_new.y * scale,
                         0.0,
-                        1.0 / 128.0 + uv[0] * 82.0 / 128.0,
-                        1.0 / 128.0 + uv[1] * 114.0 / 128.0,
+                        self.atlas_sub_texture.rect.x / self.atlas_size[0]
+                            + uv[0] * self.atlas_sub_texture.rect.width / self.atlas_size[0],
+                        self.atlas_sub_texture.rect.y / self.atlas_size[1]
+                            + uv[1] * self.atlas_sub_texture.rect.height / self.atlas_size[1],
                         Color::new(1.0, 1.0, 1.0, 1.0),
                     )
                 });
 
         let tris = self.mesh_data.triangles.iter().map(|it| *it);
         draw_batcher.renderize_next_triangles(verts, tris, Some(self.texture));
+    }
+}
+
+#[derive(Clone)]
+pub struct ImageDrawable {
+    texture: Texture2D,
+    atlas_size: [f32; 2],
+    atlas_sub_texture: SubTexture,
+    parent_bone_id: usize,
+    transform: PurifiedTransform,
+    vertices: [nalgebra::Point3<f32>; 4],
+    uvs: [(f32, f32); 4]
+}
+impl ImageDrawable {
+    pub fn new(
+        texture: Texture2D,
+        atlas_size: [f32; 2],
+        atlas_sub_texture: SubTexture,
+        parent_bone_id: usize,
+        transform: RawTransform,
+        pivot: parse_dragon_bones_json::shared_types::Point
+    ) -> Self {
+        let left = -pivot.x * atlas_sub_texture.frame_rect.width;
+        let top = -pivot.y * atlas_sub_texture.frame_rect.height;
+
+        let x_alpha_0 = (-atlas_sub_texture.frame_rect.x)
+            / atlas_sub_texture.frame_rect.width;
+
+        let x_alpha_1 = (atlas_sub_texture.rect.width - atlas_sub_texture.frame_rect.x)
+            / atlas_sub_texture.frame_rect.width;
+
+        let y_alpha_0 = (-atlas_sub_texture.frame_rect.y)
+            / atlas_sub_texture.frame_rect.height;
+
+        let y_alpha_1 = (atlas_sub_texture.rect.height - atlas_sub_texture.frame_rect.y)
+            / atlas_sub_texture.frame_rect.height;
+
+        let vertices = [
+            nalgebra::Point3::from(
+                [
+                    left + x_alpha_0 * atlas_sub_texture.frame_rect.width,
+                    top + y_alpha_0 * atlas_sub_texture.frame_rect.height,
+                    1.0
+                ]
+            ),
+            nalgebra::Point3::from(
+                [
+                    left + x_alpha_1 * atlas_sub_texture.frame_rect.width,
+                    top + y_alpha_0 * atlas_sub_texture.frame_rect.height,
+                    1.0
+                ]
+            ),
+            nalgebra::Point3::from(
+                [
+                    left + x_alpha_0 * atlas_sub_texture.frame_rect.width,
+                    top + y_alpha_1 * atlas_sub_texture.frame_rect.height,
+                    1.0
+                ]
+            ),
+            nalgebra::Point3::from(
+                [
+                    left + x_alpha_1 * atlas_sub_texture.frame_rect.width,
+                    top + y_alpha_1 * atlas_sub_texture.frame_rect.height,
+                    1.0
+                ]
+            )
+        ];
+
+        let uvs = [
+            (
+                atlas_sub_texture.rect.x / atlas_size[0],
+                atlas_sub_texture.rect.y / atlas_size[1]
+            ),
+            (
+                (atlas_sub_texture.rect.x + atlas_sub_texture.rect.width) / atlas_size[0],
+                atlas_sub_texture.rect.y / atlas_size[1]
+            ),
+            (
+                atlas_sub_texture.rect.x / atlas_size[0],
+                (atlas_sub_texture.rect.y + atlas_sub_texture.rect.height) / atlas_size[1]
+            ),
+            (
+                (atlas_sub_texture.rect.x + atlas_sub_texture.rect.width) / atlas_size[0],
+                (atlas_sub_texture.rect.y + atlas_sub_texture.rect.height) / atlas_size[1]
+            )
+        ];
+        Self {
+            texture,
+            atlas_size,
+            atlas_sub_texture,
+            parent_bone_id,
+            transform: transform.into(),
+            vertices,
+            uvs
+        }
+    }
+}
+impl Drawable for ImageDrawable {
+    fn draw(
+        &self,
+        draw_batcher: &mut BufferedDrawBatcher,
+        pose_matrices: &[Matrix3<f32>],
+        _diff_matrices: &[Matrix3<f32>],
+        position_x: f32,
+        position_y: f32,
+        scale: f32
+    ) {
+        let transition_local: nalgebra::Matrix3<f32> =
+            nalgebra::Translation2::new(self.transform.x, self.transform.y).into();
+        let rotation_matrix: nalgebra::Matrix3<f32> =
+            nalgebra::Rotation2::new(self.transform.rotation).into();
+        let scale_matrix = nalgebra::Matrix3::new(
+            self.transform.scale_x, 0.0, 0.0,
+            0.0, self.transform.scale_y, 0.0,
+            0.0, 0.0, 1.0,
+        );
+        let mat = pose_matrices[self.parent_bone_id] * transition_local * rotation_matrix * scale_matrix;
+        let indices = [0, 1, 2, 1, 2, 3].iter().map(|it| *it as u16);
+        let verts =
+            self.vertices.iter()
+                .zip(self.uvs.iter())
+                .map(|(&v, uv)| {
+                    let vert_new: nalgebra::Point3<f32> = mat * v;
+
+                    Vertex::new(
+                        position_x + vert_new.x * scale,
+                        position_y + vert_new.y * scale,
+                        0.0,
+                        uv.0,
+                        uv.1,
+                        Color::new(1.0, 1.0, 1.0, 1.0),
+                    )
+                });
+        draw_batcher.renderize_next_triangles(verts, indices, Some(self.texture));
     }
 }
 
@@ -170,36 +317,54 @@ impl NamelessBone {
 
 #[macroquad::main("draw skeleton")]
 async fn main() {
-    let (mut quad_gl, mut ctx) = unsafe {
-        let InternalGlContext { quad_gl, quad_context: ctx } = get_internal_gl();
-        (quad_gl, ctx)
+    let mut ctx = unsafe {
+        let InternalGlContext { quad_context: ctx, .. } = get_internal_gl();
+        ctx
     };
 
-    let texture_bytes = include_bytes!("../../src/test_assets/test_tex.png");
-    let spider_texture_bytes = include_bytes!("../../src/test_assets/Spider_tex.png");
-    let spider_texture_definition_bytes = include_bytes!("../../src/test_assets/Spider_tex.json");
+    let texture_bytes = include_bytes!("../../src/test_assets/Spider_tex.png");
+    let atlas_bytes = include_bytes!("../../src/test_assets/Spider_tex.json");
 
     let texture = load_texture(ctx, texture_bytes);
-    let spider_texture = load_texture(ctx, spider_texture_bytes);
-    let spider_atlas = Atlas::parse(spider_texture_definition_bytes).unwrap();
+    let atlas = Atlas::parse(atlas_bytes).unwrap();
 
-    let skeleton_bytes = include_bytes!("../../src/test_assets/test_ske.json");
+    let skeleton_bytes = include_bytes!("../../src/test_assets/Spider_ske.json");
     let skeleton_data: RawSkeletonData = serde_json::from_slice(skeleton_bytes).unwrap();
 
     let armature = &skeleton_data.armatures[0];
-    let mut mesh_drawables: Vec<Box<dyn Drawable>> = Vec::new();
+    let mut drawables: Vec<Box<dyn Drawable>> = Vec::new();
 
     let mut bones = match armature {
-        RawArmatureData::Armature { bones, skins, .. } => {
+        RawArmatureData::Armature { bones, skins, slots, .. } => {
             let mut bone_vec = Vec::with_capacity(bones.len());
             for bone in bones.iter() {
                 bone_vec.push(NamelessBone::from((bone, &bones[..])));
             }
             for skin in skins.iter() {
                 for slot in skin.slots.iter() {
+                    let parent_bone_name =
+                        slots.iter().find_map(|it| {
+                           if it.name.eq(&slot.name) { Some(&it.parent as &str) } else { None }
+                        }).unwrap_or("");
+                    let parent_bone_id = (0..bones.len()).find(|&id| bones[id].name.eq(parent_bone_name));
                     for display in slot.displays.iter() {
+                        let sub_texture = display.get_rect(&atlas);
                         if let Some(mesh) = PurifiedMeshData::<u16>::try_from(display, bones.len()) {
-                            mesh_drawables.push(Box::new(MeshDrawable::new(&mesh, texture)));
+                            drawables.push(Box::new(
+                                MeshDrawable::new(&mesh, texture, [atlas.width as f32, atlas.height as f32], sub_texture.unwrap())
+                            ));
+                        }
+                        if let &RawDisplay::Image { pivot, transform, .. } = display {
+                            drawables.push(Box::new(
+                                ImageDrawable::new(
+                                    texture,
+                                    [atlas.width as f32, atlas.height as f32],
+                                    sub_texture.unwrap(),
+                                    parent_bone_id.unwrap(),
+                                    transform,
+                                    pivot
+                                )
+                            ));
                         }
                     }
                 }
@@ -270,35 +435,15 @@ async fn main() {
     loop {
         clear_background(Color::new(0.01, 0.0, 0.05, 1.0));
 
-        draw_texture(spider_texture, 0.0, 0.0, WHITE);
-        for (_, sub_tex) in spider_atlas.sub_textures.iter() {
-            draw_rectangle_lines(
-                sub_tex.rect.x,
-                sub_tex.rect.y,
-                sub_tex.rect.width,
-                sub_tex.rect.height,
-                1.0,
-                WHITE
-            );
-            draw_rectangle_lines(
-                sub_tex.rect.x + sub_tex.frame_rect.x,
-                sub_tex.rect.y + sub_tex.frame_rect.y,
-                sub_tex.frame_rect.width,
-                sub_tex.frame_rect.height,
-                1.0,
-                GREEN
-            );
-        }
-
         let screen_center_x = screen_width() / 2.0;
         let screen_center_y = screen_height() / 2.0;
 
-        bones[bone_index[4]].transform.rotation = (get_time() * 1.7).cos() as f32 * 0.1;
-
-        bones[bone_index[1]].transform.rotation = std::f32::consts::PI / 2.0
-            + (get_time() * 2.26).cos() as f32 * 0.15;
-        bones[bone_index[2]].transform.rotation = std::f32::consts::PI / 2.0
-            - (get_time() * 2.14).cos() as f32 * 0.14;
+        // bones[bone_index[4]].transform.rotation = (get_time() * 1.7).cos() as f32 * 0.1;
+        //
+        // bones[bone_index[1]].transform.rotation = std::f32::consts::PI / 2.0
+        //     + (get_time() * 2.26).cos() as f32 * 0.15;
+        // bones[bone_index[2]].transform.rotation = std::f32::consts::PI / 2.0
+        //     - (get_time() * 2.14).cos() as f32 * 0.14;
 
         for &bone_id in bone_index.iter() {
             let bone = &bones[bone_id];
@@ -321,8 +466,15 @@ async fn main() {
             }
         }
         {
-            for mesh_drawable in mesh_drawables.iter_mut() {
-                mesh_drawable.draw(&mut draw_buffer, &diff_matrices, screen_center_x, screen_center_y, 2.0);
+            for mesh_drawable in drawables.iter() {
+                mesh_drawable.draw(
+                    &mut draw_buffer,
+                    &pose_matrices,
+                    &diff_matrices,
+                    screen_center_x,
+                    screen_center_y,
+                    2.0
+                );
             }
         }
 
@@ -346,7 +498,7 @@ async fn main() {
     }
 }
 
-fn load_texture(mut ctx: &mut Context, texture_bytes: &[u8]) -> Texture2D {
+fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> Texture2D {
     let img = image::load_from_memory(texture_bytes)
         .unwrap_or_else(|e| panic!("{}", e))
         .to_rgba8();
@@ -361,7 +513,7 @@ fn load_texture(mut ctx: &mut Context, texture_bytes: &[u8]) -> Texture2D {
                 width: img_width,
                 height: img_height,
                 format: TextureFormat::RGBA8,
-                filter: FilterMode::Nearest,
+                filter: FilterMode::Linear,
                 wrap: TextureWrap::Clamp,
             },
         )

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Deserializer};
-use crate::shared_types::{default_name, default_true};
+use crate::shared_types::{default_name, default_true, default_pivot};
 use serde_json::{Value, Map, from_str};
 use crate::skeleton_data::transform::RawTransform;
+use crate::atlas_data::{Atlas, SubTexture};
+use crate::skeleton_data::slot::RawSlot;
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawSkinData {
@@ -180,6 +182,27 @@ impl<'de> Deserialize<'de> for RawDisplay {
 }
 
 impl RawDisplay {
+    pub fn get_rect(&self, atlas: &Atlas) -> Option<SubTexture> {
+        match self {
+            RawDisplay::Image { name, .. } |
+            RawDisplay::Mesh { name, .. }
+            => {atlas.sub_textures.get(name).map(|it| *it)}
+            _ => None
+        }
+    }
+    pub fn get_parent_bone_name<'a>(&'a self, slots: &'a [RawSlot]) -> &'a str {
+        match self {
+            RawDisplay::Image { name, .. } |
+            RawDisplay::Mesh { name, .. }
+            => {
+                slots.iter().find_map(|it| {
+                    if it.name.eq(name) { Some(&it.parent as &str) } else { None }
+                }).unwrap_or("")
+            }
+            _ => ""
+        }
+    }
+
     fn parse_image<'de, D: Deserializer<'de>>(fields: Map<String, Value>) -> Result<RawDisplay, D::Error> {
         let name = match fields.get("name") {
             None => Ok("".to_string()),
@@ -251,7 +274,7 @@ impl RawDisplay {
         }?;
 
         let pivot = match fields.get("pivot") {
-            None => Ok(crate::shared_types::Point::default()),
+            None => Ok(default_pivot()),
             Some(Value::Object(obj)) => {
                 let x = match obj.get("x") {
                     None => Ok(0.0),
