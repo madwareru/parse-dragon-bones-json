@@ -109,6 +109,7 @@ impl Default for ColorTransform {
 // }
 
 pub(crate) fn default_true() -> bool { true }
+pub(crate) fn default_min() -> i32 { i32::MIN }
 pub(crate) fn default_one() -> f32 { 1.0 }
 pub(crate) fn default_no_easing() -> f32 { -2.0 }
 pub(crate) fn default_100() -> i32 { 100 }

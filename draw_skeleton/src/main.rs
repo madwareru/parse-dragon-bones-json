@@ -67,6 +67,7 @@ impl BufferedDrawBatcher {
 }
 
 pub trait Drawable {
+    fn get_draw_order(&self) -> i32;
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
@@ -84,23 +85,28 @@ pub struct MeshDrawable {
     texture: Texture2D,
     atlas_size: [f32; 2],
     atlas_sub_texture: SubTexture,
+    draw_order: i32
 }
 impl MeshDrawable {
     pub fn new(
         mesh_data: &PurifiedMeshData<u16>,
         texture: Texture2D,
         atlas_size: [f32; 2],
-        atlas_sub_texture: SubTexture
+        atlas_sub_texture: SubTexture,
+        draw_order: i32
     ) -> Self {
         Self {
             mesh_data: Arc::new(mesh_data.clone()),
             texture,
             atlas_size,
-            atlas_sub_texture
+            atlas_sub_texture,
+            draw_order
         }
     }
 }
 impl Drawable for MeshDrawable {
+    fn get_draw_order(&self) -> i32 { self.draw_order }
+
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
@@ -150,7 +156,8 @@ pub struct ImageDrawable {
     parent_bone_id: usize,
     transform: PurifiedTransform,
     vertices: [nalgebra::Point3<f32>; 4],
-    uvs: [(f32, f32); 4]
+    uvs: [(f32, f32); 4],
+    draw_order: i32
 }
 impl ImageDrawable {
     pub fn new(
@@ -159,7 +166,8 @@ impl ImageDrawable {
         atlas_sub_texture: SubTexture,
         parent_bone_id: usize,
         transform: RawTransform,
-        pivot: parse_dragon_bones_json::shared_types::Point
+        pivot: parse_dragon_bones_json::shared_types::Point,
+        draw_order: i32
     ) -> Self {
         let left = -pivot.x * atlas_sub_texture.frame_rect.width;
         let top = -pivot.y * atlas_sub_texture.frame_rect.height;
@@ -232,11 +240,14 @@ impl ImageDrawable {
             parent_bone_id,
             transform: transform.into(),
             vertices,
-            uvs
+            uvs,
+            draw_order
         }
     }
 }
 impl Drawable for ImageDrawable {
+    fn get_draw_order(&self) -> i32 { self.draw_order }
+
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
@@ -342,16 +353,22 @@ async fn main() {
             }
             for skin in skins.iter() {
                 for slot in skin.slots.iter() {
-                    let parent_bone_name =
-                        slots.iter().find_map(|it| {
-                           if it.name.eq(&slot.name) { Some(&it.parent as &str) } else { None }
-                        }).unwrap_or("");
+                    let (parent_bone_name, draw_order) =
+                        slots.iter().enumerate().find_map(|(id, it)| {
+                           if it.name.eq(&slot.name) { Some((&it.parent as &str, id as i32)) } else { None }
+                        }).unwrap_or(("", i32::MIN));
                     let parent_bone_id = (0..bones.len()).find(|&id| bones[id].name.eq(parent_bone_name));
                     for display in slot.displays.iter() {
                         let sub_texture = display.get_rect(&atlas);
                         if let Some(mesh) = PurifiedMeshData::<u16>::try_from(display, bones.len()) {
                             drawables.push(Box::new(
-                                MeshDrawable::new(&mesh, texture, [atlas.width as f32, atlas.height as f32], sub_texture.unwrap())
+                                MeshDrawable::new(
+                                    &mesh,
+                                    texture,
+                                    [atlas.width as f32, atlas.height as f32],
+                                    sub_texture.unwrap(),
+                                    draw_order
+                                )
                             ));
                         }
                         if let &RawDisplay::Image { pivot, transform, .. } = display {
@@ -362,7 +379,8 @@ async fn main() {
                                     sub_texture.unwrap(),
                                     parent_bone_id.unwrap(),
                                     transform,
-                                    pivot
+                                    pivot,
+                                    draw_order
                                 )
                             ));
                         }
@@ -466,8 +484,9 @@ async fn main() {
             }
         }
         {
-            for mesh_drawable in drawables.iter() {
-                mesh_drawable.draw(
+            drawables.sort_by(|lhs, rhs| lhs.get_draw_order().cmp(&rhs.get_draw_order()));
+            for drawable in drawables.iter() {
+                drawable.draw(
                     &mut draw_buffer,
                     &pose_matrices,
                     &diff_matrices,

@@ -1,9 +1,10 @@
 use serde::Deserialize;
+use crate::shared_types::default_min;
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawSlot {
     #[serde(rename = "displayIndex")]
-    #[serde(default)]
+    #[serde(default = "default_min")]
     pub display_id: i32,
     #[serde(default)]
     pub name: String,
