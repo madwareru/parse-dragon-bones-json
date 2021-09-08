@@ -222,52 +222,52 @@
           "parent": "Kleshnyz_pr"
         },
         {
-          "name": "Leg_middle",
-          "parent": "Lapa_4_2"
+          "name": "Leg_small1",
+          "parent": "Lapa_3_3"
         },
         {
           "name": "Leg_middle1",
           "parent": "Lapa_3_2"
         },
         {
-          "name": "Leg_middle2",
-          "parent": "Lapa_2_2"
-        },
-        {
-          "name": "Leg_big",
-          "parent": "Lapa_4_1"
-        },
-        {
-          "name": "Leg_small3",
-          "parent": "Lapa_2_3"
+          "name": "Leg_big1",
+          "parent": "Lapa_3_1"
         },
         {
           "name": "Leg_small",
           "parent": "Lapa_4_3"
         },
         {
-          "name": "Leg_big1",
-          "parent": "Lapa_3_1"
+          "name": "Leg_middle",
+          "parent": "Lapa_4_2"
+        },
+        {
+          "name": "Leg_big",
+          "parent": "Lapa_4_1"
+        },
+        {
+          "name": "Leg_small2",
+          "parent": "Lapa_1_3"
+        },
+        {
+          "name": "Leg_middle2",
+          "parent": "Lapa_2_2"
         },
         {
           "name": "Leg_big2",
           "parent": "Lapa_2_1"
         },
         {
-          "name": "Leg_big3",
-          "parent": "Lapa_1_1"
+          "name": "Leg_small3",
+          "parent": "Lapa_2_3"
         },
         {
           "name": "Leg_middle3",
           "parent": "Lapa_1_2"
         },
         {
-          "name": "Leg_small1",
-          "parent": "Lapa_3_3"
-        },
-        {
-          "name": "Leg_small2",
-          "parent": "Lapa_1_3"
+          "name": "Leg_big3",
+          "parent": "Lapa_1_1"
         },
         {
           "name": "Body",

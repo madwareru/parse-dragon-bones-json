@@ -1,1 +1,3 @@
 /target
+/draw_skeleton/target/
+/draw_skeleton/Cargo.lock

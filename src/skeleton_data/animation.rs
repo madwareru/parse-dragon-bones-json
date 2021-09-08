@@ -3,8 +3,11 @@ use crate::shared_types::{default_one, default_name, default_no_easing, ColorTra
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawAnimationData {
+    #[serde(default = "default_name")]
+    pub name: String,
     #[serde(default)]
     pub duration: u32,
+
     #[serde(rename = "playTimes")]
     #[serde(default)]
     pub play_times: u32,
@@ -13,14 +16,12 @@ pub struct RawAnimationData {
     pub fade_in_time: f32,
     #[serde(default = "default_one")]
     pub scale: f32,
-    #[serde(default = "default_name")]
-    pub name: String,
     #[serde(rename = "frame")]
     #[serde(default)]
     pub general_timeline: Vec<RawGeneralFrame>,
     #[serde(rename = "zOrder")]
     #[serde(default)]
-    pub z_order_timeline: Vec<RawGeneralFrame>,
+    pub z_order_timeline: Vec<RawZOrderFrame>,
     #[serde(rename = "slot")]
     #[serde(default)]
     pub slot_timelines: Vec<RawSlotTimeline>,

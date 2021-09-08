@@ -14,7 +14,7 @@ pub enum RawArmatureData {
         aa_bb: crate::shared_types::Rect,
 
         #[serde(rename = "bone")]
-        #[serde(default = "Vec::new")]
+        #[serde(default)]
         bones: Vec<super::bone::RawBone>,
         // #[serde(rename = "ik")]
         // #[serde(default)]
