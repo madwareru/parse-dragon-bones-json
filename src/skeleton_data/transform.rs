@@ -47,7 +47,7 @@ impl Default for RawTransform {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct PurifiedTransform {
     pub x: f32,
     pub y: f32,

@@ -5,6 +5,7 @@ pub mod slot;
 pub mod actions;
 pub mod animation;
 pub mod skin;
+pub mod ik;
 
 use serde::Deserialize;
 

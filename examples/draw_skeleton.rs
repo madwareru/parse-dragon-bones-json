@@ -20,15 +20,18 @@ async fn main() {
         let screen_center_x = screen_width() / 2.0;
         let screen_center_y = screen_height() / 2.0;
 
-        let tail_bone = runtime_armature.get_bone_by_name("tail_bone");
+        let body_bone = runtime_armature.get_bone_by_name("body_bone");
 
-        runtime_armature.update_animation(get_frame_time(), |bones| {
-            if let Some(tail_bone) = tail_bone {
-                bones[tail_bone].transform.rotation = (get_time() * 1.7).cos() as f32 * 0.1;
+        runtime_armature.update_animation_ex(get_frame_time(), |bones| {
+            if let Some(body_bone) = body_bone {
+                bones[body_bone].transform.rotation = (get_time() * 2.7).cos() as f32 * 0.3;
+                bones[body_bone].transform.y = 42.0;
             }
         });
+
         runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE);
         runtime_armature.draw_bones(screen_center_x, screen_center_y, SCALE);
+        runtime_armature.draw_ik_effectors(screen_center_x, screen_center_y, SCALE);
         next_frame().await;
     }
 }

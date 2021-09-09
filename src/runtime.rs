@@ -8,6 +8,9 @@ use crate::skeleton_data::armature::RawArmatureData;
 use std::collections::{VecDeque, HashMap};
 use macroquad::miniquad::{TextureParams, TextureFormat, TextureWrap, Context};
 use crate::skeleton_data::RawSkeletonData;
+use std::ops::IndexMut;
+use indextree::{Arena, Node};
+use crate::skeleton_data::ik::IkInfo;
 
 const COLORS: &[Color] = &[
     GOLD,
@@ -30,13 +33,14 @@ const COLORS: &[Color] = &[
 
 pub struct BufferedDrawBatcher {
     vertex_buffer: Vec<Vertex>,
-    index_buffer: Vec<u16>
+    index_buffer: Vec<u16>,
 }
+
 impl BufferedDrawBatcher {
     pub fn new() -> Self {
         Self {
             vertex_buffer: Vec::new(),
-            index_buffer: Vec::new()
+            index_buffer: Vec::new(),
         }
     }
 
@@ -44,7 +48,7 @@ impl BufferedDrawBatcher {
         &mut self,
         vertices: impl Iterator<Item=Vertex>,
         indices: impl Iterator<Item=u16>,
-        texture: Option<Texture2D>
+        texture: Option<Texture2D>,
     ) {
         self.vertex_buffer.clear();
         self.index_buffer.clear();
@@ -71,7 +75,7 @@ pub trait Drawable {
         diff_matrices: &[nalgebra::Matrix3<f32>],
         position_x: f32,
         position_y: f32,
-        scale: f32
+        scale: f32,
     );
     fn instantiate(&self) -> Box<dyn Drawable>;
 }
@@ -82,25 +86,27 @@ pub struct MeshDrawable {
     texture: Texture2D,
     atlas_size: [f32; 2],
     atlas_sub_texture: SubTexture,
-    draw_order: i32
+    draw_order: i32,
 }
+
 impl MeshDrawable {
     pub fn new(
         mesh_data: &PurifiedMeshData<u16>,
         texture: Texture2D,
         atlas_size: [f32; 2],
         atlas_sub_texture: SubTexture,
-        draw_order: i32
+        draw_order: i32,
     ) -> Self {
         Self {
             mesh_data: Arc::new(mesh_data.clone()),
             texture,
             atlas_size,
             atlas_sub_texture,
-            draw_order
+            draw_order,
         }
     }
 }
+
 impl Drawable for MeshDrawable {
     fn get_draw_order(&self) -> i32 { self.draw_order }
 
@@ -111,7 +117,7 @@ impl Drawable for MeshDrawable {
         diff_matrices: &[nalgebra::Matrix3<f32>],
         position_x: f32,
         position_y: f32,
-        scale: f32
+        scale: f32,
     ) {
         let verts =
             buffer(&self.mesh_data.vertices, 2)
@@ -155,7 +161,7 @@ impl Drawable for MeshDrawable {
             texture,
             atlas_size,
             atlas_sub_texture,
-            draw_order
+            draw_order,
         })
     }
 }
@@ -169,8 +175,9 @@ pub struct ImageDrawable {
     transform: PurifiedTransform,
     vertices: [nalgebra::Point3<f32>; 4],
     uvs: [(f32, f32); 4],
-    draw_order: i32
+    draw_order: i32,
 }
+
 impl ImageDrawable {
     pub fn new(
         texture: Texture2D,
@@ -179,7 +186,7 @@ impl ImageDrawable {
         parent_bone_id: usize,
         transform: RawTransform,
         pivot: crate::shared_types::Point,
-        draw_order: i32
+        draw_order: i32,
     ) -> Self {
         let left = -pivot.x * atlas_sub_texture.frame_rect.width;
         let top = -pivot.y * atlas_sub_texture.frame_rect.height;
@@ -253,10 +260,11 @@ impl ImageDrawable {
             transform: transform.into(),
             vertices,
             uvs,
-            draw_order
+            draw_order,
         }
     }
 }
+
 impl Drawable for ImageDrawable {
     fn get_draw_order(&self) -> i32 { self.draw_order }
 
@@ -267,7 +275,7 @@ impl Drawable for ImageDrawable {
         _diff_matrices: &[nalgebra::Matrix3<f32>],
         position_x: f32,
         position_y: f32,
-        scale: f32
+        scale: f32,
     ) {
         let transition_local: nalgebra::Matrix3<f32> =
             nalgebra::Translation2::new(self.transform.x, self.transform.y).into();
@@ -311,12 +319,12 @@ impl Drawable for ImageDrawable {
             transform: self.transform,
             vertices: self.vertices.clone(),
             uvs: self.uvs,
-            draw_order
+            draw_order,
         })
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct NamelessBone {
     id: usize,
     parent_id: Option<usize>,
@@ -362,16 +370,25 @@ fn buffer<T>(iterated: &[T], buffer_size: usize) -> impl Iterator<Item=&[T]> {
     )
 }
 
+#[derive(Copy, Clone, Debug)]
+struct BoneInfo {
+    id: usize,
+    is_dirty: bool,
+}
+
 pub struct RuntimeArmature {
     ticked_time: f32,
     ms_per_tick: f32,
+    ik: Arc<Vec<IkInfo>>,
+    bone_tree: Arena<BoneInfo>,
+    tree_handles: Vec<indextree::NodeId>,
     bone_lookup: Arc<HashMap<String, usize>>,
     bones: Vec<NamelessBone>,
-    bone_index: Arc<Vec<usize>>,
     drawables: Vec<Box<dyn Drawable>>,
-    initial_matrices: Vec<nalgebra::Matrix3<f32>>,
+    initial_matrices: Arc<Vec<nalgebra::Matrix3<f32>>>,
     pose_matrices: Vec<nalgebra::Matrix3<f32>>,
-    diff_matrices: Vec<nalgebra::Matrix3<f32>>
+    diff_matrices: Vec<nalgebra::Matrix3<f32>>,
+    buffer_deque: VecDeque<indextree::NodeId>,
 }
 
 impl RuntimeArmature {
@@ -384,7 +401,6 @@ impl RuntimeArmature {
     pub fn instantiate(&self) -> Self {
         let bones = self.bones.clone();
         let bone_lookup = self.bone_lookup.clone();
-        let bone_index = self.bone_index.clone();
         let initial_matrices = self.initial_matrices.clone();
         let pose_matrices = self.pose_matrices.clone();
         let diff_matrices = self.diff_matrices.clone();
@@ -394,12 +410,15 @@ impl RuntimeArmature {
             ticked_time: 0.0,
             ms_per_tick,
             bones,
-            bone_index,
             drawables,
             initial_matrices,
             pose_matrices,
             diff_matrices,
-            bone_lookup
+            bone_lookup,
+            bone_tree: self.bone_tree.clone(),
+            tree_handles: self.tree_handles.clone(),
+            buffer_deque: VecDeque::new(),
+            ik: self.ik.clone(),
         }
     }
 
@@ -407,10 +426,11 @@ impl RuntimeArmature {
         raw_armature: &RawArmatureData,
         atlas: &crate::atlas_data::Atlas,
         texture: Texture2D,
-        frame_rate: u32
+        frame_rate: u32,
     ) -> (String, Self) {
         match raw_armature {
-            RawArmatureData::Armature { name, bones, skins, slots, .. } => {
+            RawArmatureData::Armature { name, bones, skins, slots, ik, .. } => {
+                let ik = Arc::new(ik.clone());
                 let mut drawables: Vec<Box<dyn Drawable>> = Vec::new();
                 let mut bone_vec = Vec::with_capacity(bones.len());
                 let mut bone_lookup = HashMap::new();
@@ -418,35 +438,6 @@ impl RuntimeArmature {
                     bone_lookup.insert(bone.name.clone(), bone_vec.len());
                     bone_vec.push(NamelessBone::from((bone, &bones[..])));
                 }
-                let bone_index = { // Topological sort
-                    let mut index = Vec::with_capacity(bones.len());
-                    let mut stack = VecDeque::new();
-                    for i in 0..bone_vec.len() {
-                        let mut bone_ref = &bone_vec[i];
-                        while bone_ref.parent_id.is_some() {
-                            bone_ref = match bone_ref.parent_id {
-                                Some(id) if id == i => panic!("cycle detected!"),
-                                Some(id) => {
-                                    stack.push_back(bone_ref.id);
-                                    &bone_vec[id]
-                                }
-                                None => unreachable!()
-                            };
-                        }
-                        stack.push_back(bone_ref.id);
-                        'stack_unroll: loop {
-                            match stack.pop_back() {
-                                None => { break 'stack_unroll; }
-                                Some(id) => {
-                                    if !index.contains(&id) {
-                                        index.push(id)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    index
-                };
                 for skin in skins.iter() {
                     for slot in skin.slots.iter() {
                         let (parent_bone_name, draw_order) =
@@ -463,7 +454,7 @@ impl RuntimeArmature {
                                         texture,
                                         [atlas.width as f32, atlas.height as f32],
                                         sub_texture.unwrap(),
-                                        draw_order
+                                        draw_order,
                                     )
                                 ));
                             }
@@ -476,7 +467,7 @@ impl RuntimeArmature {
                                         parent_bone_id.unwrap(),
                                         transform,
                                         pivot,
-                                        draw_order
+                                        draw_order,
                                     )
                                 ));
                             }
@@ -484,7 +475,7 @@ impl RuntimeArmature {
                     }
                 }
                 let mut initial_matrices: Vec<nalgebra::Matrix3<f32>> = vec![nalgebra::Matrix3::identity(); bones.len()];
-                for &bone_id in bone_index.iter() {
+                for bone_id in 0..bone_vec.len() {
                     let bone = &bone_vec[bone_id];
                     let flattened_rotation = if bone.inherit_rotation {
                         bone.transform.rotation
@@ -532,38 +523,69 @@ impl RuntimeArmature {
                     *m = m.try_inverse().unwrap();
                 }
 
-                let pose_matrices: Vec<nalgebra::Matrix3<f32>> = vec![nalgebra::Matrix3::identity(); bone_vec.len()];
+                let pose_matrices = initial_matrices.clone();
                 let diff_matrices: Vec<nalgebra::Matrix3<f32>> = vec![nalgebra::Matrix3::identity(); bone_vec.len()];
 
+                let mut bone_tree = Arena::new();
+                let mut tree_handles: Vec<indextree::NodeId> = Vec::with_capacity(bone_vec.len());
+                for i in 0..bone_vec.len() {
+                    let bone = &bone_vec[i];
+                    let handle = bone_tree.new_node(BoneInfo { id: i, is_dirty: true });
+                    if let Some(pid) = bone.parent_id {
+                        let parent_handle = tree_handles[pid];
+                        parent_handle.append(handle, &mut bone_tree);
+                    }
+                    tree_handles.push(handle);
+                }
                 (
                     name.clone(),
                     Self {
                         ticked_time: 0.0,
                         ms_per_tick: 1.0 / frame_rate as f32,
                         bones: bone_vec,
-                        bone_index: Arc::new(bone_index),
                         drawables,
-                        initial_matrices,
+                        initial_matrices: Arc::new(initial_matrices),
                         pose_matrices,
                         diff_matrices,
-                        bone_lookup: Arc::new(bone_lookup)
+                        bone_lookup: Arc::new(bone_lookup),
+                        bone_tree,
+                        tree_handles,
+                        buffer_deque: VecDeque::new(),
+                        ik,
                     }
                 )
             }
         }
     }
 
-    pub fn update_animation(
+    pub fn update_animation(&mut self, dt: f32) {
+        self.ticked_time += dt;
+        while self.ticked_time >= self.ms_per_tick {
+            self.ticked_time -= self.ms_per_tick;
+            self.tick_animation();
+        }
+        self.update_matrices();
+        self.update_ik();
+        self.update_matrices();
+    }
+
+    pub fn update_animation_ex(
         &mut self,
         dt: f32,
-        post_process_animation: impl FnOnce(&mut[NamelessBone]) -> ()
+        post_process_animation: impl FnOnce(&mut BonesMut) -> (),
     ) {
         self.ticked_time += dt;
         while self.ticked_time >= self.ms_per_tick {
             self.ticked_time -= self.ms_per_tick;
             self.tick_animation();
         }
-        post_process_animation(&mut self.bones);
+        self.update_matrices();
+        {
+            let mut bones_mut = BonesMut { armature: self };
+            post_process_animation(&mut bones_mut);
+        }
+        self.update_matrices();
+        self.update_ik();
         self.update_matrices();
     }
 
@@ -571,8 +593,109 @@ impl RuntimeArmature {
         // todo
     }
 
+    fn update_ik(&mut self) {
+        for ik_info_id in 0..self.ik.len() {
+            let ((bone_id, effector_bone_id, chain_length, bend_positive)) = {
+                let bone_id = self.get_bone_by_name(&self.ik[ik_info_id].bone).unwrap();
+                let effector_bone_id = self.get_bone_by_name(&self.ik[ik_info_id].target).unwrap();
+                (bone_id, effector_bone_id, self.ik[ik_info_id].chain_length, self.ik[ik_info_id].bend_positive)
+            };
+
+            let effector_position: nalgebra::Point3<f32> =
+                self.pose_matrices[effector_bone_id] *
+                    nalgebra::Point3::new(0.0, 0.0, 1.0);
+
+            match chain_length {
+                0 => {
+                    let mut bone = &self.bones[bone_id];
+                    let origin: nalgebra::Point3<f32> = self.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
+                    let delta = effector_position - origin;
+                    let mut rotation = delta.y.atan2(delta.x);
+                    if bone.inherit_rotation {
+                        while let Some(pid) = bone.parent_id {
+                            bone = &self.bones[pid];
+                            rotation -= bone.transform.rotation;
+                        }
+                    }
+                    let mut bones_mut = BonesMut { armature: self };
+                    bones_mut[bone_id].transform.rotation = rotation;
+                }
+                1 => {
+                    let upper_bone_id = self.bones[bone_id].parent_id.unwrap();
+
+                    let bone_lower = &self.bones[bone_id];
+                    let bone_upper = &self.bones[upper_bone_id];
+
+                    let l1: f32 = bone_lower.length;
+                    let l2: f32 = bone_upper.length;
+
+                    let origin: nalgebra::Point3<f32> = self.pose_matrices[upper_bone_id] *
+                        nalgebra::Point3::new(0.0, 0.0, 1.0);
+
+                    let mut delta = effector_position.clone() - origin.clone();
+                    let direction = delta.normalize();
+
+                    let mut angle_decrement = 0.0;
+                    let mut bone = bone_upper;
+                    if bone.inherit_rotation {
+                        while let Some(pid) = bone.parent_id {
+                            bone = &self.bones[pid];
+                            angle_decrement += bone.transform.rotation;
+                        }
+                    }
+
+                    let (lower_rotation, upper_rotation) = if delta.magnitude() > l1 + l2 {
+                        let mut upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
+                        (0.0, upper_rotation)
+                    } else {
+                        let k2: f32 = l1 * l1 - l2 * l2;
+                        let k1 = delta.magnitude();
+
+                        let d = (k1 * k1 - k2) / (2.0 * k1);
+                        let a = (d / l2).acos();
+
+                        let mat: nalgebra::Matrix3<f32> = if bend_positive {
+                            nalgebra::Rotation2::new(-a).into()
+                        } else {
+                            nalgebra::Rotation2::new(a).into()
+                        };
+                        let direction: nalgebra::Point3<f32> = nalgebra::Point3::new(
+                            direction.x,
+                            direction.y,
+                            1.0,
+                        );
+                        let delta = mat * direction;
+                        let knee_position: nalgebra::Point3<f32> =
+                            nalgebra::Point3::new(
+                                origin.x + delta.x * l2,
+                                origin.y + delta.y * l2,
+                                1.0
+                            );
+
+                        let mut upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
+                        let lower_rotation =
+                            (effector_position.y - knee_position.y).atan2(effector_position.x - knee_position.x)
+                            - upper_rotation - angle_decrement;
+                        (lower_rotation, upper_rotation)
+                    };
+                    let mut bones_mut = BonesMut { armature: self };
+                    bones_mut[bone_id].transform.rotation = lower_rotation;
+                    bones_mut[upper_bone_id].transform.rotation = upper_rotation;
+                }
+                _ => panic!("unsupported ik chain length!")
+            }
+        }
+    }
+
     fn update_matrices(&mut self) {
-        for &bone_id in self.bone_index.iter() {
+        for &node_id in self.tree_handles.iter() {
+            let mut node = self.bone_tree.get_mut(node_id).unwrap().get_mut();
+            if node.is_dirty {
+                node.is_dirty = false;
+            } else {
+                continue;
+            }
+            let bone_id = node.id;
             let bone = &self.bones[bone_id];
             let flattened_rotation = if bone.inherit_rotation {
                 bone.transform.rotation
@@ -592,8 +715,8 @@ impl RuntimeArmature {
                 let mut scale = (bone.transform.scale_x, bone.transform.scale_y);
                 while let Some(pid) = bone.parent_id {
                     bone = &self.bones[pid];
-                    scale.0 -= bone.transform.scale_x;
-                    scale.1 -= bone.transform.scale_y;
+                    scale.0 /= bone.transform.scale_x;
+                    scale.1 /= bone.transform.scale_y;
                 }
                 scale
             };
@@ -627,13 +750,25 @@ impl RuntimeArmature {
                 &self.diff_matrices,
                 position_x,
                 position_y,
-                scale
+                scale,
+            );
+        }
+    }
+
+    pub fn draw_ik_effectors(&self, position_x: f32, position_y: f32, scale: f32) {
+        for bone_id in self.ik.iter().map(|it| self.get_bone_by_name(&it.target).unwrap()) {
+            let origin = self.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
+            draw_circle(
+                position_x + origin.x * scale,
+                position_y + origin.y * scale,
+                5.0,
+                RED
             );
         }
     }
 
     pub fn draw_bones(&self, position_x: f32, position_y: f32, scale: f32) {
-        for &bone_id in self.bone_index.iter() {
+        for bone_id in 0..self.bones.len() {
             let bone = &self.bones[bone_id];
             {
                 let bone_color = COLORS[bone_id % COLORS.len()];
@@ -653,13 +788,14 @@ impl RuntimeArmature {
 }
 
 pub struct DragonBonesData {
-    armatures: HashMap<String, RuntimeArmature>
+    armatures: HashMap<String, RuntimeArmature>,
 }
+
 impl DragonBonesData {
     pub fn load(
         skeleton_file_bytes: &[u8],
         atlas_file_bytes: &[u8],
-        texture_file_bytes: &[u8]
+        texture_file_bytes: &[u8],
     ) -> Self {
         let ctx = unsafe {
             let InternalGlContext { quad_context: ctx, .. } = get_internal_gl();
@@ -679,6 +815,31 @@ impl DragonBonesData {
 
     pub fn instantiate_armature(&self, armature_name: &str) -> Option<RuntimeArmature> {
         self.armatures.get(armature_name).map(|it| it.instantiate())
+    }
+}
+
+pub struct BonesMut<'a> {
+    armature: &'a mut RuntimeArmature,
+}
+
+impl<'a> core::ops::Index<usize> for BonesMut<'a> {
+    type Output = NamelessBone;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.armature.bones[index]
+    }
+}
+
+impl<'a> IndexMut<usize> for BonesMut<'a> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        let node_id = self.armature.tree_handles[index];
+        for node_id in node_id.descendants(&self.armature.bone_tree) {
+            self.armature.buffer_deque.push_back(node_id);
+        }
+        while let Some(node_id) = self.armature.buffer_deque.pop_front() {
+            let mut node = self.armature.bone_tree.get_mut(node_id).unwrap().get_mut();
+            node.is_dirty = true;
+        }
+        &mut self.armature.bones[index]
     }
 }
 

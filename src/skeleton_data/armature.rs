@@ -16,9 +16,9 @@ pub enum RawArmatureData {
         #[serde(rename = "bone")]
         #[serde(default)]
         bones: Vec<super::bone::RawBone>,
-        // #[serde(rename = "ik")]
-        // #[serde(default)]
-        // ik_constraints: Vec<crate::shared_types::IkConstraint>
+
+        #[serde(default)]
+        ik: Vec<super::ik::IkInfo>,
 
         #[serde(rename = "slot")]
         #[serde(default)]
