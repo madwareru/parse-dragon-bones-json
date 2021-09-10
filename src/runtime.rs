@@ -9,7 +9,7 @@ use std::collections::{VecDeque, HashMap};
 use macroquad::miniquad::{TextureParams, TextureFormat, TextureWrap, Context};
 use crate::skeleton_data::RawSkeletonData;
 use std::ops::IndexMut;
-use indextree::{Arena, Node};
+use indextree::{Arena};
 use crate::skeleton_data::ik::IkInfo;
 
 const COLORS: &[Color] = &[
@@ -389,6 +389,9 @@ pub struct RuntimeArmature {
     pose_matrices: Vec<nalgebra::Matrix3<f32>>,
     diff_matrices: Vec<nalgebra::Matrix3<f32>>,
     buffer_deque: VecDeque<indextree::NodeId>,
+    current_animation_id: usize,
+    current_animation_ticks: usize,
+    start_actions_triggered: bool
 }
 
 impl RuntimeArmature {
@@ -419,6 +422,9 @@ impl RuntimeArmature {
             tree_handles: self.tree_handles.clone(),
             buffer_deque: VecDeque::new(),
             ik: self.ik.clone(),
+            current_animation_id: 0,
+            current_animation_ticks: 0,
+            start_actions_triggered: false
         }
     }
 
@@ -552,6 +558,9 @@ impl RuntimeArmature {
                         tree_handles,
                         buffer_deque: VecDeque::new(),
                         ik,
+                        current_animation_id: 0,
+                        current_animation_ticks: 0,
+                        start_actions_triggered: false
                     }
                 )
             }
@@ -590,12 +599,17 @@ impl RuntimeArmature {
     }
 
     fn tick_animation(&mut self) {
-        // todo
+        if !self.start_actions_triggered {
+            //todo: trigger start actions
+            self.start_actions_triggered = false;
+        }
+        // todo: take current animation and apply its animation tracks for current ticks
+        self.current_animation_ticks += 1;
     }
 
     fn update_ik(&mut self) {
         for ik_info_id in 0..self.ik.len() {
-            let ((bone_id, effector_bone_id, chain_length, bend_positive)) = {
+            let (bone_id, effector_bone_id, chain_length, bend_positive) = {
                 let bone_id = self.get_bone_by_name(&self.ik[ik_info_id].bone).unwrap();
                 let effector_bone_id = self.get_bone_by_name(&self.ik[ik_info_id].target).unwrap();
                 (bone_id, effector_bone_id, self.ik[ik_info_id].chain_length, self.ik[ik_info_id].bend_positive)
@@ -632,7 +646,7 @@ impl RuntimeArmature {
                     let origin: nalgebra::Point3<f32> = self.pose_matrices[upper_bone_id] *
                         nalgebra::Point3::new(0.0, 0.0, 1.0);
 
-                    let mut delta = effector_position.clone() - origin.clone();
+                    let delta = effector_position.clone() - origin.clone();
                     let direction = delta.normalize();
 
                     let mut angle_decrement = 0.0;
@@ -645,7 +659,7 @@ impl RuntimeArmature {
                     }
 
                     let (lower_rotation, upper_rotation) = if delta.magnitude() > l1 + l2 {
-                        let mut upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
+                        let upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
                         (0.0, upper_rotation)
                     } else {
                         let k2: f32 = l1 * l1 - l2 * l2;
@@ -672,7 +686,7 @@ impl RuntimeArmature {
                                 1.0
                             );
 
-                        let mut upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
+                        let upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
                         let lower_rotation =
                             (effector_position.y - knee_position.y).atan2(effector_position.x - knee_position.x)
                             - upper_rotation - angle_decrement;
@@ -785,6 +799,176 @@ impl RuntimeArmature {
             }
         }
     }
+}
+
+pub enum TweenEasing {
+    None,
+    Linear,
+    QuadraticIn,
+    QuadraticOut,
+    QuadraticInOut,
+    FreeCurve(Vec<f32>)
+}
+impl TweenEasing {
+    pub fn parse(tween_easing: f32, curve_samples: &[f32]) -> Self {
+        const EPS: f32 = 0.00001;
+        if curve_samples.len() > 0 {
+            Self::FreeCurve(Vec::from(curve_samples))
+        } else {
+            if (tween_easing - 2.0).abs() <= EPS {
+                Self::None
+            } else if tween_easing.abs() <= EPS {
+                Self::Linear
+            } else if tween_easing < 0.0 {
+                Self::QuadraticIn
+            } else if tween_easing <= 1.0 {
+                Self::QuadraticOut
+            } else {
+                Self::QuadraticInOut
+            }
+        }
+    }
+    pub fn interpolate(&self, a: f32, b: f32, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            TweenEasing::None => b,
+            TweenEasing::Linear => a + (b - a) * t,
+            TweenEasing::QuadraticIn => a + (b - a) * t.powi(2),
+            TweenEasing::QuadraticOut => a + (b - a) * (1.0 - t).powi(2),
+            TweenEasing::QuadraticInOut => a + (b - a) * if t <= 0.5 {
+                (t * 2.0).powi(2)
+            } else {
+                (2.0 - t * 2.0).powi(2)
+            },
+            TweenEasing::FreeCurve(_samples) => {
+                //todo: interpolate it correctly, right now we are just falling back to linear
+                a + (b - a) * t
+            }
+        }
+    }
+}
+
+pub trait Sample: Copy {
+    fn interpolate(
+        &self,
+        other: Self,
+        start_tick: usize,
+        end_tick: usize,
+        current_tick: usize,
+        tween_easing: &TweenEasing
+    ) -> Self;
+}
+
+pub struct SamplingRegion<T: Sample> {
+    pub start_sample: T,
+    pub end_sample: T,
+    pub start_tick: usize,
+    pub end_tick: usize,
+    pub tween_easing: TweenEasing
+}
+
+impl<T: Sample> SamplingRegion<T> {
+    pub fn interpolate(&self, current_tick: usize) -> T {
+        self.start_sample.interpolate(
+            self.end_sample,
+            self.start_tick,
+            self.end_tick,
+            current_tick,
+            &self.tween_easing
+        )
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct RotationSample {
+    pub theta: f32
+}
+impl Sample for RotationSample {
+    fn interpolate(
+        &self,
+        other: Self,
+        start_tick: usize,
+        end_tick: usize,
+        current_tick: usize,
+        tween_easing: &TweenEasing
+    ) -> Self {
+        debug_assert!(start_tick <= end_tick);
+        let a = if end_tick == start_tick {
+            1.0
+        } else {
+            (current_tick - start_tick) as f32 / (end_tick - start_tick) as f32
+        };
+        Self {
+            theta: tween_easing.interpolate(self.theta, other.theta, a)
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct TransitionSample {
+    pub x: f32,
+    pub y: f32
+}
+impl Sample for TransitionSample {
+    fn interpolate(
+        &self,
+        other: Self,
+        start_tick: usize,
+        end_tick: usize,
+        current_tick: usize,
+        tween_easing: &TweenEasing
+    ) -> Self {
+        debug_assert!(start_tick <= end_tick);
+        let a = if end_tick == start_tick {
+            1.0
+        } else {
+            (current_tick - start_tick) as f32 / (end_tick - start_tick) as f32
+        };
+        Self {
+            x: tween_easing.interpolate(self.x, other.x, a),
+            y: tween_easing.interpolate(self.y, other.y, a)
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct ScalingSample {
+    pub scale_x: f32,
+    pub scale_y: f32
+}
+impl Sample for ScalingSample {
+    fn interpolate(
+        &self,
+        other: Self,
+        start_tick: usize,
+        end_tick: usize,
+        current_tick: usize,
+        tween_easing: &TweenEasing
+    ) -> Self {
+        debug_assert!(start_tick <= end_tick);
+        let a = if end_tick == start_tick {
+            1.0
+        } else {
+            (current_tick - start_tick) as f32 / (end_tick - start_tick) as f32
+        };
+        Self {
+            scale_x: tween_easing.interpolate(self.scale_x, other.scale_x, a),
+            scale_y: tween_easing.interpolate(self.scale_y, other.scale_y, a)
+        }
+    }
+}
+
+pub struct AnimationTrack<T: Sample> {
+    pub bone_id: usize,
+    pub regions: Vec<SamplingRegion<T>>
+}
+
+pub struct AnimationData {
+    pub duration_in_ticks: usize,
+    pub play_times: usize,
+    pub rotation_tracks: Vec<AnimationTrack<RotationSample>>,
+    pub transition_tracks: Vec<AnimationTrack<TransitionSample>>,
+    pub scaling_tracks: Vec<AnimationTrack<ScalingSample>>,
 }
 
 pub struct DragonBonesData {
