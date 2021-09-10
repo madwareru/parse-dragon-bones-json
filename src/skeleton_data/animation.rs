@@ -67,9 +67,9 @@ pub struct RawScaleFrame {
     pub curve: Vec<f32>,
     #[serde(default = "default_no_easing")]
     pub tween_easing: f32,
-    #[serde(default)]
+    #[serde(default = "default_one")]
     pub x: f32,
-    #[serde(default)]
+    #[serde(default = "default_one")]
     pub y: f32,
 }
 

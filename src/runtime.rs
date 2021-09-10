@@ -11,6 +11,7 @@ use crate::skeleton_data::RawSkeletonData;
 use std::ops::IndexMut;
 use indextree::{Arena};
 use crate::skeleton_data::ik::IkInfo;
+use std::fmt::Debug;
 
 const COLORS: &[Color] = &[
     GOLD,
@@ -383,15 +384,17 @@ pub struct RuntimeArmature {
     bone_tree: Arena<BoneInfo>,
     tree_handles: Vec<indextree::NodeId>,
     bone_lookup: Arc<HashMap<String, usize>>,
+    pose_bones: Arc<Vec<NamelessBone>>,
     bones: Vec<NamelessBone>,
     drawables: Vec<Box<dyn Drawable>>,
     initial_matrices: Arc<Vec<nalgebra::Matrix3<f32>>>,
     pose_matrices: Vec<nalgebra::Matrix3<f32>>,
     diff_matrices: Vec<nalgebra::Matrix3<f32>>,
     buffer_deque: VecDeque<indextree::NodeId>,
+    animations: Arc<Vec<AnimationData>>,
+    start_animation_id: usize,
     current_animation_id: usize,
-    current_animation_ticks: usize,
-    start_actions_triggered: bool
+    current_animation_ticks: usize
 }
 
 impl RuntimeArmature {
@@ -413,6 +416,7 @@ impl RuntimeArmature {
             ticked_time: 0.0,
             ms_per_tick,
             bones,
+            pose_bones: self.pose_bones.clone(),
             drawables,
             initial_matrices,
             pose_matrices,
@@ -422,9 +426,10 @@ impl RuntimeArmature {
             tree_handles: self.tree_handles.clone(),
             buffer_deque: VecDeque::new(),
             ik: self.ik.clone(),
-            current_animation_id: 0,
-            current_animation_ticks: 0,
-            start_actions_triggered: false
+            animations: self.animations.clone(),
+            start_animation_id: self.start_animation_id,
+            current_animation_id: self.start_animation_id,
+            current_animation_ticks: 0
         }
     }
 
@@ -435,7 +440,7 @@ impl RuntimeArmature {
         frame_rate: u32,
     ) -> (String, Self) {
         match raw_armature {
-            RawArmatureData::Armature { name, bones, skins, slots, ik, .. } => {
+            RawArmatureData::Armature { name, bones, skins, slots, ik, animations, default_actions, .. } => {
                 let ik = Arc::new(ik.clone());
                 let mut drawables: Vec<Box<dyn Drawable>> = Vec::new();
                 let mut bone_vec = Vec::with_capacity(bones.len());
@@ -543,11 +548,156 @@ impl RuntimeArmature {
                     }
                     tree_handles.push(handle);
                 }
+
+                let mut animations_vec: Vec<AnimationData> = Vec::new();
+                let mut bezier_buffer: Vec<CubicBezierRegion> = Vec::new();
+                for anim in animations.iter() {
+                    let name = anim.name.clone();
+                    let duration_in_ticks = anim.duration as usize;
+                    let play_times = anim.play_times as usize;
+                    let mut animation_data = AnimationData {
+                        name,
+                        duration_in_ticks,
+                        play_times,
+                        rotation_tracks: Vec::new(),
+                        transition_tracks: Vec::new(),
+                        scaling_tracks: Vec::new()
+                    };
+                    for bone_timeline in anim.bone_timelines.iter() {
+                        let bone_id = *bone_lookup.get(&bone_timeline.bone_name).unwrap();
+                        if bone_timeline.frames.len() > 0 {
+                            //todo: support sometime
+                        } else {
+                            if bone_timeline.rotation_frames.len() > 0 {
+                                let mut tick_now: usize = 0;
+                                let mut animation_track = AnimationTrack {
+                                    bone_id,
+                                    regions: Vec::new()
+                                };
+                                for i in 0..bone_timeline.rotation_frames.len()-1 {
+                                    let frame = &bone_timeline.rotation_frames[i];
+                                    let next_frame = &bone_timeline.rotation_frames[i+1];
+                                    let rotation = bone_vec[bone_id].transform.rotation
+                                        + frame.rotate.to_radians()
+                                        * if frame.clockwise == 1 { -1.0 } else { 1.0 };
+                                    let next_rotation = bone_vec[bone_id].transform.rotation
+                                        + next_frame.rotate.to_radians()
+                                        * if next_frame.clockwise == 1 { -1.0 } else { 1.0 };
+
+                                    animation_track.regions.push(
+                                        SamplingRegion {
+                                            start_sample: RotationSample{ theta: rotation },
+                                            end_sample: RotationSample{ theta: next_rotation },
+                                            start_tick: tick_now,
+                                            end_tick: tick_now + frame.duration as usize,
+                                            tween_easing: TweenEasing::parse(
+                                                &mut bezier_buffer,
+                                                frame.tween_easing,
+                                                &frame.curve
+                                            )
+                                        }
+                                    );
+                                    tick_now += bone_timeline.rotation_frames[i].duration as usize;
+                                }
+                                animation_data.rotation_tracks.push(animation_track);
+                            }
+                            if bone_timeline.translate_frames.len() > 0 {
+                                let mut tick_now: usize = 0;
+                                let mut animation_track = AnimationTrack {
+                                    bone_id,
+                                    regions: Vec::new()
+                                };
+                                for i in 0..bone_timeline.translate_frames.len()-1 {
+                                    let frame = &bone_timeline.translate_frames[i];
+                                    let next_frame = &bone_timeline.translate_frames[i+1];
+
+                                    let translation_x = bone_vec[bone_id].transform.x + frame.x;
+                                    let translation_y = bone_vec[bone_id].transform.y + frame.y;
+
+                                    let next_translation_x = bone_vec[bone_id].transform.x + next_frame.x;
+                                    let next_translation_y = bone_vec[bone_id].transform.y + next_frame.y;
+
+                                    animation_track.regions.push(
+                                        SamplingRegion {
+                                            start_sample: TransitionSample{
+                                                x: translation_x,
+                                                y: translation_y
+                                            },
+                                            end_sample: TransitionSample{
+                                                x: next_translation_x,
+                                                y: next_translation_y
+                                            },
+                                            start_tick: tick_now,
+                                            end_tick: tick_now + frame.duration as usize,
+                                            tween_easing: TweenEasing::parse(
+                                                &mut bezier_buffer,
+                                                frame.tween_easing,
+                                                &frame.curve
+                                            )
+                                        }
+                                    );
+                                    tick_now += bone_timeline.translate_frames[i].duration as usize;
+                                }
+                                animation_data.transition_tracks.push(animation_track);
+                            }
+                            if bone_timeline.scale_frames.len() > 0 {
+                                let mut tick_now: usize = 0;
+                                let mut animation_track = AnimationTrack {
+                                    bone_id,
+                                    regions: Vec::new()
+                                };
+                                for i in 0..bone_timeline.scale_frames.len()-1 {
+                                    let frame = &bone_timeline.scale_frames[i];
+                                    let next_frame = &bone_timeline.scale_frames[i+1];
+
+                                    let scale_x = frame.x;
+                                    let scale_y = frame.y;
+
+                                    let next_scale_x = next_frame.x;
+                                    let next_scale_y = next_frame.y;
+
+                                    animation_track.regions.push(
+                                        SamplingRegion {
+                                            start_sample: ScalingSample{
+                                                scale_x,
+                                                scale_y
+                                            },
+                                            end_sample: ScalingSample{
+                                                scale_x: next_scale_x,
+                                                scale_y: next_scale_y
+                                            },
+                                            start_tick: tick_now,
+                                            end_tick: tick_now + frame.duration as usize,
+                                            tween_easing: TweenEasing::parse(
+                                                &mut bezier_buffer,
+                                                frame.tween_easing,
+                                                &frame.curve
+                                            )
+                                        }
+                                    );
+                                    tick_now += bone_timeline.scale_frames[i].duration as usize;
+                                }
+                                animation_data.scaling_tracks.push(animation_track);
+                            }
+                        }
+                    }
+                    animations_vec.push(animation_data);
+                }
+
+                let start_animation_id =
+                    default_actions.iter()
+                        .find(|it| it.action_type.eq("play"))
+                        .and_then(|it| {
+                            (0..animations_vec.len()).find(|&id| animations_vec[id].name.eq(&it.goto_and_play))
+                        })
+                        .unwrap_or(0);
+
                 (
                     name.clone(),
                     Self {
                         ticked_time: 0.0,
                         ms_per_tick: 1.0 / frame_rate as f32,
+                        pose_bones: Arc::new(bone_vec.clone()),
                         bones: bone_vec,
                         drawables,
                         initial_matrices: Arc::new(initial_matrices),
@@ -558,11 +708,29 @@ impl RuntimeArmature {
                         tree_handles,
                         buffer_deque: VecDeque::new(),
                         ik,
-                        current_animation_id: 0,
-                        current_animation_ticks: 0,
-                        start_actions_triggered: false
+                        animations: Arc::new(animations_vec),
+                        start_animation_id,
+                        current_animation_id: start_animation_id,
+                        current_animation_ticks: 0
                     }
                 )
+            }
+        }
+    }
+
+    pub fn goto_and_play(&mut self, animation_name: &str) {
+        let animation_id = (0..self.animations.len()).find(|&id| {
+            self.animations[id].name.eq(animation_name)
+        });
+        if let Some(animation_id) = animation_id {
+            self.current_animation_id = animation_id;
+            self.current_animation_ticks = 0;
+            for i in 0..self.bones.len() {
+                self.bones[i].transform = self.pose_bones[i].transform;
+            }
+            for &node_id in self.tree_handles.iter() {
+                let mut node = self.bone_tree.get_mut(node_id).unwrap().get_mut();
+                node.is_dirty = true;
             }
         }
     }
@@ -599,11 +767,71 @@ impl RuntimeArmature {
     }
 
     fn tick_animation(&mut self) {
-        if !self.start_actions_triggered {
-            //todo: trigger start actions
-            self.start_actions_triggered = false;
+        let play_times = self.animations[self.current_animation_id].play_times;
+        let duration_in_ticks = self.animations[self.current_animation_id].duration_in_ticks;
+        if play_times != 0 && duration_in_ticks * play_times <= self.current_animation_ticks {
+            return;
         }
-        // todo: take current animation and apply its animation tracks for current ticks
+        if play_times == 0 && duration_in_ticks <= self.current_animation_ticks {
+            self.current_animation_ticks = self.current_animation_ticks % duration_in_ticks;
+        }
+
+        let num_rotation_tracks = self.animations[self.current_animation_id].rotation_tracks.len();
+        let num_transition_tracks = self.animations[self.current_animation_id].transition_tracks.len();
+        let num_scaling_tracks = self.animations[self.current_animation_id].scaling_tracks.len();
+        for i in 0..num_rotation_tracks {
+            let (bone_id, current_frame) = {
+                let track = &self.animations[self.current_animation_id].rotation_tracks[i];
+                (
+                    track.bone_id,
+                    track.regions.iter().find(|&it| {
+                        it.start_tick <= self.current_animation_ticks &&
+                        it.end_tick >= self.current_animation_ticks
+                    })
+                )
+            };
+            if let Some(current_frame) = current_frame {
+                let interpolated_rotation = current_frame.interpolate(self.current_animation_ticks);
+                let mut bones_mut = BonesMut { armature: self };
+                bones_mut[bone_id].transform.rotation = interpolated_rotation.theta;
+            }
+        }
+        for i in 0..num_transition_tracks {
+            let (bone_id, current_frame) = {
+                let track = &self.animations[self.current_animation_id].transition_tracks[i];
+                (
+                    track.bone_id,
+                    track.regions.iter().find(|&it| {
+                        it.start_tick <= self.current_animation_ticks &&
+                            it.end_tick >= self.current_animation_ticks
+                    })
+                )
+            };
+            if let Some(current_frame) = current_frame {
+                let interpolated_translation = current_frame.interpolate(self.current_animation_ticks);
+                let mut bones_mut = BonesMut { armature: self };
+                bones_mut[bone_id].transform.x = interpolated_translation.x;
+                bones_mut[bone_id].transform.y = interpolated_translation.y;
+            }
+        }
+        for i in 0..num_scaling_tracks {
+            let (bone_id, current_frame) = {
+                let track = &self.animations[self.current_animation_id].scaling_tracks[i];
+                (
+                    track.bone_id,
+                    track.regions.iter().find(|&it| {
+                        it.start_tick <= self.current_animation_ticks &&
+                            it.end_tick >= self.current_animation_ticks
+                    })
+                )
+            };
+            if let Some(current_frame) = current_frame {
+                let interpolated_scale = current_frame.interpolate(self.current_animation_ticks);
+                let mut bones_mut = BonesMut { armature: self };
+                bones_mut[bone_id].transform.scale_x = interpolated_scale.scale_x;
+                bones_mut[bone_id].transform.scale_y = interpolated_scale.scale_y;
+            }
+        }
         self.current_animation_ticks += 1;
     }
 
@@ -801,19 +1029,152 @@ impl RuntimeArmature {
     }
 }
 
+pub struct CubicBezierRegion {
+    start_x: f32,
+    start_y: f32,
+    handle_0_x: f32,
+    handle_0_y: f32,
+    handle_1_x: f32,
+    handle_1_y: f32,
+    end_x: f32,
+    end_y: f32
+}
+impl CubicBezierRegion {
+    pub fn get_approx_bezier(buffer: &mut Vec<Self>, slice: &[f32]) -> [f32; 16] {
+        Self::fill_buffer_from_slice(buffer, slice);
+        let mut result = [
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        ];
+        for i in 1..15 {
+            let x = i as f32 / 15.0;
+            let subregion = buffer.iter().find(|it| it.start_x <= x && x <= it.end_x).unwrap();
+            result[i] = subregion.sample_at(subregion.find_t(x));
+        }
+        result
+    }
+
+    pub fn fill_buffer_from_slice(buffer: &mut Vec<Self>, slice: &[f32]) {
+        buffer.clear();
+        let (start_x, start_y, end_x, end_y) = (0.0, 0.0, 1.0, 1.0);
+        let mut left_x = start_x;
+        let mut left_y = start_y;
+        for offset in (0..slice.len()).step_by(6) {
+            let (right_x, right_y) = if slice.len() - offset == 4 {
+                (end_x, end_y)
+            } else {
+                (slice[offset + 4], slice[offset + 5])
+            };
+            buffer.push(
+                Self {
+                    start_x: left_x,
+                    start_y: left_y,
+                    handle_0_x: slice[offset],
+                    handle_0_y: slice[offset + 1],
+                    handle_1_x: slice[offset + 2],
+                    handle_1_y: slice[offset + 3],
+                    end_x: right_x,
+                    end_y: right_y
+                }
+            )
+        }
+    }
+
+    pub fn find_t(&self, x: f32) -> f32 {
+        const EPS: f32 = 0.01;
+        const LITTLE_STEP: f32 = 0.00001;
+        let (mut l, mut r) = (0.0, LITTLE_STEP);
+        let (mut sample_l, mut sample_r) = (
+            CubicBezierRegion::cubic_resolve(
+                l,
+                self.start_x,
+                self.handle_0_x,
+                self.handle_1_x,
+                self.end_x
+            ),
+            CubicBezierRegion::cubic_resolve(
+                r,
+                self.start_x,
+                self.handle_0_x,
+                self.handle_1_x,
+                self.end_x
+            )
+        );
+        while !(sample_l <= x && sample_r >= x) {
+            l += LITTLE_STEP;
+            r += LITTLE_STEP;
+            sample_l = CubicBezierRegion::cubic_resolve(
+                l,
+                self.start_x,
+                self.handle_0_x,
+                self.handle_1_x,
+                self.end_x
+            );
+            sample_r = CubicBezierRegion::cubic_resolve(
+                r,
+                self.start_x,
+                self.handle_0_x,
+                self.handle_1_x,
+                self.end_x
+            );
+        }
+        let mut t = (l + r) / 2.0;
+        let mut step = (r - l) * 0.25;
+        let mut sample = CubicBezierRegion::cubic_resolve(
+            t,
+            self.start_x,
+            self.handle_0_x,
+            self.handle_1_x,
+            self.end_x
+        );
+        while (sample - x).abs() > EPS {
+            t += if sample > x { step } else { -step };
+            step *= 0.5;
+            sample = CubicBezierRegion::cubic_resolve(
+                t,
+                self.start_x,
+                self.handle_0_x,
+                self.handle_1_x,
+                self.end_x
+            );
+        }
+        t
+    }
+
+    pub fn sample_at(&self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        CubicBezierRegion::cubic_resolve(
+            t,
+            self.start_y,
+            self.handle_0_y,
+            self.handle_1_y,
+            self.end_y
+        )
+    }
+
+    fn cubic_resolve(t: f32, k1: f32, k2: f32, k3: f32, k4: f32) -> f32 {
+        let (a, b, c) = ( k1 + (k2 - k1) * t, k2 + (k3 - k2) * t, k3 + (k4 - k3) * t);
+        let (d, e) = (a + (b - a) * t, b + (c - b) * t);
+        d + (e - d) * t
+    }
+}
+
+#[derive(Debug)]
 pub enum TweenEasing {
     None,
     Linear,
     QuadraticIn,
     QuadraticOut,
     QuadraticInOut,
-    FreeCurve(Vec<f32>)
+    FreeCurve([f32; 16])
 }
 impl TweenEasing {
-    pub fn parse(tween_easing: f32, curve_samples: &[f32]) -> Self {
+    pub fn parse(bezier_buffer: &mut Vec<CubicBezierRegion>, tween_easing: f32, curve_samples: &[f32]) -> Self {
         const EPS: f32 = 0.00001;
         if curve_samples.len() > 0 {
-            Self::FreeCurve(Vec::from(curve_samples))
+            Self::FreeCurve(CubicBezierRegion::get_approx_bezier(bezier_buffer, curve_samples))
         } else {
             if (tween_easing - 2.0).abs() <= EPS {
                 Self::None
@@ -831,24 +1192,34 @@ impl TweenEasing {
     pub fn interpolate(&self, a: f32, b: f32, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
         match self {
-            TweenEasing::None => b,
+            TweenEasing::None => a + (b - a) * t,
             TweenEasing::Linear => a + (b - a) * t,
-            TweenEasing::QuadraticIn => a + (b - a) * t.powi(2),
-            TweenEasing::QuadraticOut => a + (b - a) * (1.0 - t).powi(2),
-            TweenEasing::QuadraticInOut => a + (b - a) * if t <= 0.5 {
-                (t * 2.0).powi(2)
-            } else {
-                (2.0 - t * 2.0).powi(2)
-            },
-            TweenEasing::FreeCurve(_samples) => {
-                //todo: interpolate it correctly, right now we are just falling back to linear
+            TweenEasing::QuadraticIn => a + (b - a) * t * t,
+            TweenEasing::QuadraticOut => b - (b - a) * (1.0 - t).powi(2),
+            TweenEasing::QuadraticInOut => a + (b - a) *
+                if t <= 0.5 {
+                    (t * 2.0).powi(2) * 0.5
+                } else {
+                    -1.0 - 2.0 * t * (t - 2.0)
+                },
+            TweenEasing::FreeCurve(samples) => {
+                let region_id = t * 15.0;
+                let t = region_id.fract();
+                let region_id = region_id.trunc() as usize;
+                let t = if region_id >= 15 {
+                    samples[15]
+                } else {
+                    let left = samples[region_id];
+                    let right = samples[region_id + 1];
+                    left + (right - left) * t
+                };
                 a + (b - a) * t
             }
         }
     }
 }
 
-pub trait Sample: Copy {
+pub trait Sample: Copy + Debug {
     fn interpolate(
         &self,
         other: Self,
@@ -859,6 +1230,8 @@ pub trait Sample: Copy {
     ) -> Self;
 }
 
+
+#[derive(Debug)]
 pub struct SamplingRegion<T: Sample> {
     pub start_sample: T,
     pub end_sample: T,
@@ -879,7 +1252,7 @@ impl<T: Sample> SamplingRegion<T> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct RotationSample {
     pub theta: f32
 }
@@ -904,7 +1277,7 @@ impl Sample for RotationSample {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TransitionSample {
     pub x: f32,
     pub y: f32
@@ -931,7 +1304,7 @@ impl Sample for TransitionSample {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ScalingSample {
     pub scale_x: f32,
     pub scale_y: f32
@@ -958,12 +1331,15 @@ impl Sample for ScalingSample {
     }
 }
 
+#[derive(Debug)]
 pub struct AnimationTrack<T: Sample> {
     pub bone_id: usize,
     pub regions: Vec<SamplingRegion<T>>
 }
 
+#[derive(Debug)]
 pub struct AnimationData {
+    pub name: String,
     pub duration_in_ticks: usize,
     pub play_times: usize,
     pub rotation_tracks: Vec<AnimationTrack<RotationSample>>,
@@ -1047,4 +1423,46 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
             },
         )
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::runtime::TweenEasing;
+
+    #[test]
+    fn test_easings() {
+        let easing = TweenEasing::Linear;
+        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
+        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
+        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
+        assert_eq!(0.0, test_1);
+        assert_eq!(3.0, test_2);
+        assert_eq!(1.5, test_3);
+
+        let easing = TweenEasing::QuadraticIn;
+        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
+        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
+        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
+        assert_eq!(0.0, test_1);
+        assert_eq!(3.0, test_2);
+        assert_ne!(1.5, test_3);
+        assert!(test_3 < 1.5);
+
+        let easing = TweenEasing::QuadraticOut;
+        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
+        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
+        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
+        assert_eq!(0.0, test_1);
+        assert_eq!(3.0, test_2);
+        assert_ne!(1.5, test_3);
+        assert!(test_3 > 1.5);
+
+        let easing = TweenEasing::QuadraticInOut;
+        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
+        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
+        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
+        assert_eq!(0.0, test_1);
+        assert_eq!(3.0, test_2);
+        assert_eq!(1.5, test_3);
+    }
 }

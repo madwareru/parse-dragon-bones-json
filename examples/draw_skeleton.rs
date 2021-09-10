@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use parse_dragon_bones_json::runtime::*;
+use macroquad::miniquad::KeyCode;
 
 #[macroquad::main("draw skeleton")]
 async fn main() {
@@ -13,25 +14,28 @@ async fn main() {
     let mut draw_buffer = BufferedDrawBatcher::new();
 
     loop {
-        clear_background(Color::new(0.01, 0.0, 0.05, 1.0));
+        clear_background(Color::new(0.48, 0.46, 0.5, 1.0));
 
         const SCALE: f32 = 0.9;
 
         let screen_center_x = screen_width() / 2.0;
         let screen_center_y = screen_height() / 2.0;
 
-        let body_bone = runtime_armature.get_bone_by_name("body_bone");
+        if is_key_pressed(KeyCode::Key1) {
+            runtime_armature.goto_and_play("rooster_idle_anim");
+        } else if is_key_pressed(KeyCode::Key2) {
+            runtime_armature.goto_and_play("rooster_eat_anim");
+        } else if is_key_pressed(KeyCode::Key3) {
+            runtime_armature.goto_and_play("rooster_idle_sleep_anim");
+        } else if is_key_pressed(KeyCode::Key4) {
+            runtime_armature.goto_and_play("rooster_walk_anim");
+        } else if is_key_pressed(KeyCode::Key5) {
+            runtime_armature.goto_and_play("rooster_run_anim");
+        }
 
-        runtime_armature.update_animation_ex(get_frame_time(), |bones| {
-            if let Some(body_bone) = body_bone {
-                bones[body_bone].transform.rotation = (get_time() * 2.7).cos() as f32 * 0.3;
-                bones[body_bone].transform.y = 42.0;
-            }
-        });
+        runtime_armature.update_animation(get_frame_time());
 
         runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE);
-        runtime_armature.draw_bones(screen_center_x, screen_center_y, SCALE);
-        runtime_armature.draw_ik_effectors(screen_center_x, screen_center_y, SCALE);
         next_frame().await;
     }
 }
