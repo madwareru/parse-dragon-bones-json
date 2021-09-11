@@ -7,6 +7,7 @@ pub struct IkInfo {
     #[serde(default = "default_true")]
     pub bend_positive: bool,
     #[serde(rename = "chain")]
+    #[serde(default)]
     pub chain_length: usize,
     #[serde(default = "default_one")]
     pub weight: f32,

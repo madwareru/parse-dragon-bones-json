@@ -1040,18 +1040,18 @@ pub struct CubicBezierRegion {
     end_y: f32
 }
 impl CubicBezierRegion {
-    pub fn get_approx_bezier(buffer: &mut Vec<Self>, slice: &[f32]) -> [f32; 16] {
+    pub fn get_approx_bezier(buffer: &mut Vec<Self>, slice: &[f32]) -> [u8; 16] {
         Self::fill_buffer_from_slice(buffer, slice);
         let mut result = [
-            0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 1.0
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 255
         ];
         for i in 1..15 {
             let x = i as f32 / 15.0;
             let subregion = buffer.iter().find(|it| it.start_x <= x && x <= it.end_x).unwrap();
-            result[i] = subregion.sample_at(subregion.find_t(x));
+            result[i] = (subregion.sample_at(subregion.find_t(x)) * 255.0).clamp(0.0, 255.0) as u8;
         }
         result
     }
@@ -1165,57 +1165,40 @@ impl CubicBezierRegion {
 pub enum TweenEasing {
     None,
     Linear,
-    QuadraticIn,
-    QuadraticOut,
-    QuadraticInOut,
-    FreeCurve([f32; 16])
+    FreeCurve([u8; 16])
 }
 impl TweenEasing {
     pub fn parse(bezier_buffer: &mut Vec<CubicBezierRegion>, tween_easing: f32, curve_samples: &[f32]) -> Self {
         const EPS: f32 = 0.00001;
-        if curve_samples.len() > 0 {
+        if curve_samples.len() >= 4 {
             Self::FreeCurve(CubicBezierRegion::get_approx_bezier(bezier_buffer, curve_samples))
         } else {
             if (tween_easing - 2.0).abs() <= EPS {
                 Self::None
-            } else if tween_easing.abs() <= EPS {
-                Self::Linear
-            } else if tween_easing < 0.0 {
-                Self::QuadraticIn
-            } else if tween_easing <= 1.0 {
-                Self::QuadraticOut
             } else {
-                Self::QuadraticInOut
+                Self::Linear
             }
         }
     }
     pub fn interpolate(&self, a: f32, b: f32, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
-        match self {
-            TweenEasing::None => a + (b - a) * t,
-            TweenEasing::Linear => a + (b - a) * t,
-            TweenEasing::QuadraticIn => a + (b - a) * t * t,
-            TweenEasing::QuadraticOut => b - (b - a) * (1.0 - t).powi(2),
-            TweenEasing::QuadraticInOut => a + (b - a) *
-                if t <= 0.5 {
-                    (t * 2.0).powi(2) * 0.5
-                } else {
-                    -1.0 - 2.0 * t * (t - 2.0)
-                },
+        let t = match self {
+            TweenEasing::None => 0.0,
+            TweenEasing::Linear => t,
             TweenEasing::FreeCurve(samples) => {
                 let region_id = t * 15.0;
                 let t = region_id.fract();
                 let region_id = region_id.trunc() as usize;
-                let t = if region_id >= 15 {
-                    samples[15]
+                if region_id >= 15 {
+                    1.0
                 } else {
-                    let left = samples[region_id];
-                    let right = samples[region_id + 1];
+                    let left = samples[region_id] as f32 / 255.0;
+                    let right = samples[region_id + 1] as f32 / 255.0;
                     left + (right - left) * t
-                };
-                a + (b - a) * t
+                }
             }
-        }
+        };
+        a + (b - a) * t
     }
 }
 

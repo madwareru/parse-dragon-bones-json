@@ -33,7 +33,7 @@ async fn main() {
             runtime_armature.goto_and_play("rooster_run_anim");
         }
 
-        runtime_armature.update_animation(get_frame_time());
+        runtime_armature.update_animation(get_frame_time() * 1.5);
 
         runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE);
         next_frame().await;
