@@ -32,6 +32,12 @@ const COLORS: &[Color] = &[
     MAGENTA
 ];
 
+#[derive(Copy, Clone)]
+pub enum DrawFlip {
+    None,
+    Flipped
+}
+
 pub struct BufferedDrawBatcher {
     vertex_buffer: Vec<Vertex>,
     index_buffer: Vec<u16>,
@@ -77,6 +83,7 @@ pub trait Drawable {
         position_x: f32,
         position_y: f32,
         scale: f32,
+        x_flipped: bool
     );
     fn instantiate(&self) -> Box<dyn Drawable>;
 }
@@ -119,7 +126,9 @@ impl Drawable for MeshDrawable {
         position_x: f32,
         position_y: f32,
         scale: f32,
+        flipped: bool
     ) {
+        let x_scale = if flipped { -scale} else { scale };
         let verts =
             buffer(&self.mesh_data.vertices, 2)
                 .zip(buffer(&self.mesh_data.uvs, 2))
@@ -136,7 +145,7 @@ impl Drawable for MeshDrawable {
                         );
 
                     Vertex::new(
-                        position_x + vert_new.x * scale,
+                        position_x + vert_new.x * x_scale,
                         position_y + vert_new.y * scale,
                         0.0,
                         self.atlas_sub_texture.rect.x / self.atlas_size[0]
@@ -277,7 +286,9 @@ impl Drawable for ImageDrawable {
         position_x: f32,
         position_y: f32,
         scale: f32,
+        flipped: bool
     ) {
+        let x_scale = if flipped { -scale} else { scale };
         let transition_local: nalgebra::Matrix3<f32> =
             nalgebra::Translation2::new(self.transform.x, self.transform.y).into();
         let rotation_matrix: nalgebra::Matrix3<f32> =
@@ -296,7 +307,7 @@ impl Drawable for ImageDrawable {
                     let vert_new: nalgebra::Point3<f32> = mat * v;
 
                     Vertex::new(
-                        position_x + vert_new.x * scale,
+                        position_x + vert_new.x * x_scale,
                         position_y + vert_new.y * scale,
                         0.0,
                         uv.0,
@@ -849,18 +860,11 @@ impl RuntimeArmature {
 
             match chain_length {
                 0 => {
-                    let mut bone = &self.bones[bone_id];
                     let origin: nalgebra::Point3<f32> = self.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
                     let delta = effector_position - origin;
-                    let mut rotation = delta.y.atan2(delta.x);
-                    if bone.inherit_rotation {
-                        while let Some(pid) = bone.parent_id {
-                            bone = &self.bones[pid];
-                            rotation -= bone.transform.rotation;
-                        }
-                    }
+                    let rotation = delta.y.atan2(delta.x);
                     let mut bones_mut = BonesMut { armature: self };
-                    bones_mut[bone_id].transform.rotation = rotation;
+                    bones_mut.set_bone_world_rotation(bone_id, rotation);
                 }
                 1 => {
                     let upper_bone_id = self.bones[bone_id].parent_id.unwrap();
@@ -983,7 +987,19 @@ impl RuntimeArmature {
         }
     }
 
-    pub fn draw(&mut self, draw_batch: &mut BufferedDrawBatcher, position_x: f32, position_y: f32, scale: f32) {
+    pub fn draw(
+        &mut self,
+        draw_batch:
+        &mut BufferedDrawBatcher,
+        position_x: f32,
+        position_y: f32,
+        scale: f32,
+        flip_x: DrawFlip
+    ) {
+        let x_flipped = match flip_x {
+            DrawFlip::None => false,
+            DrawFlip::Flipped => true
+        };
         self.drawables.sort_by(|lhs, rhs| lhs.get_draw_order().cmp(&rhs.get_draw_order()));
         for drawable in self.drawables.iter() {
             drawable.draw(
@@ -993,6 +1009,7 @@ impl RuntimeArmature {
                 position_x,
                 position_y,
                 scale,
+                x_flipped
             );
         }
     }
@@ -1059,8 +1076,8 @@ impl CubicBezierRegion {
     pub fn fill_buffer_from_slice(buffer: &mut Vec<Self>, slice: &[f32]) {
         buffer.clear();
         let (start_x, start_y, end_x, end_y) = (0.0, 0.0, 1.0, 1.0);
-        let mut left_x = start_x;
-        let mut left_y = start_y;
+        let left_x = start_x;
+        let left_y = start_y;
         for offset in (0..slice.len()).step_by(6) {
             let (right_x, right_y) = if slice.len() - offset == 4 {
                 (end_x, end_y)
@@ -1365,6 +1382,41 @@ pub struct BonesMut<'a> {
     armature: &'a mut RuntimeArmature,
 }
 
+impl<'a> BonesMut<'a> {
+    pub fn set_bone_world_rotation(&mut self, bone_id: usize, theta: f32) {
+        let mut bone = &self.armature.bones[bone_id];
+        let mut rotation = theta;
+        if bone.inherit_rotation {
+            while let Some(pid) = bone.parent_id {
+                bone = &self.armature.bones[pid];
+                rotation -= bone.transform.rotation;
+            }
+        }
+        self[bone_id].transform.rotation = rotation;
+    }
+}
+
+impl<'a> BonesMut<'a> {
+    pub fn get_bone_world_position(
+        &self,
+        bone_id: usize,
+        position_x: f32,
+        position_y: f32,
+        scale: f32,
+        x_flip: DrawFlip
+    ) -> (f32, f32) {
+        let x_scale = match x_flip {
+            DrawFlip::None => scale,
+            DrawFlip::Flipped => -scale
+        };
+        let origin = self.armature.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
+        (
+            position_x + origin.x * x_scale,
+            position_y + origin.y * scale
+        )
+    }
+}
+
 impl<'a> core::ops::Index<usize> for BonesMut<'a> {
     type Output = NamelessBone;
     fn index(&self, index: usize) -> &Self::Output {
@@ -1391,7 +1443,57 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
         .unwrap_or_else(|e| panic!("{}", e))
         .to_rgba8();
     let (img_width, img_height) = (img.width(), img.height());
-    let raw_bytes = img.into_raw();
+    let mut raw_bytes = img.into_raw();
+    for _ in 0..3 {
+        for j in 0..(img_height as usize) {
+            let stride = 4 * j * img_width as usize;
+            for i in (0..4 * (img_width as usize)).step_by(4) {
+                if raw_bytes[stride + i] == 0 &&
+                    raw_bytes[stride + i + 1] == 0 &&
+                    raw_bytes[stride + i + 2] == 0 &&
+                    raw_bytes[stride + i + 3] == 0 {
+                    if j > 0 {
+                        let prev_stride = stride - (img_width * 4) as usize;
+                        if raw_bytes[prev_stride + i] != 0 ||
+                            raw_bytes[prev_stride + i + 1] != 0 ||
+                            raw_bytes[prev_stride + i + 2] != 0 ||
+                            raw_bytes[prev_stride + i + 3] != 0 {
+                            raw_bytes[stride + i] = raw_bytes[prev_stride + i];
+                            raw_bytes[stride + i + 1] = raw_bytes[prev_stride + i + 1];
+                            raw_bytes[stride + i + 2] = raw_bytes[prev_stride + i + 2];
+                        }
+                    }
+                    if j < (img_height - 1) as usize {
+                        let next_stride = stride + (img_width * 4) as usize;
+                        if raw_bytes[next_stride + i] != 0 ||
+                            raw_bytes[next_stride + i + 1] != 0 ||
+                            raw_bytes[next_stride + i + 2] != 0 ||
+                            raw_bytes[next_stride + i + 3] != 0 {
+                            raw_bytes[stride + i] = raw_bytes[next_stride + i];
+                            raw_bytes[stride + i + 1] = raw_bytes[next_stride + i + 1];
+                            raw_bytes[stride + i + 2] = raw_bytes[next_stride + i + 2];
+                        }
+                    }
+                    if i > 0 && (raw_bytes[stride + i - 1] != 0 ||
+                        raw_bytes[stride + i - 2] != 0 ||
+                        raw_bytes[stride + i - 3] != 0 ||
+                        raw_bytes[stride + i - 4] != 0) {
+                        raw_bytes[stride + i] = raw_bytes[stride + i - 4];
+                        raw_bytes[stride + i + 1] = raw_bytes[stride + i - 3];
+                        raw_bytes[stride + i + 2] = raw_bytes[stride + i - 2];
+                    }
+                    if i < 4 * (img_width as usize) - 4 && (raw_bytes[stride + i + 4] != 0 ||
+                        raw_bytes[stride + i + 5] != 0 ||
+                        raw_bytes[stride + i + 6] != 0 ||
+                        raw_bytes[stride + i + 7] != 0) {
+                        raw_bytes[stride + i] = raw_bytes[stride + i + 4];
+                        raw_bytes[stride + i + 1] = raw_bytes[stride + i + 5];
+                        raw_bytes[stride + i + 2] = raw_bytes[stride + i + 6];
+                    }
+                }
+            }
+        }
+    }
 
     Texture2D::from_miniquad_texture(
         miniquad::Texture::from_data_and_format(
