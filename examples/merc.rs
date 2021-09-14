@@ -19,7 +19,7 @@ async fn main() {
     loop {
         clear_background(Color::new(0.48, 0.46, 0.5, 1.0));
 
-        const SCALE: f32 = 0.5;
+        const SCALE: f32 = 0.75;
 
         let screen_center_x = screen_width() / 2.0;
         let screen_center_y = screen_height() / 2.0;
@@ -28,6 +28,10 @@ async fn main() {
             runtime_armature.goto_and_play("idle");
         } else if is_key_pressed(KeyCode::Key2) {
             runtime_armature.goto_and_play("walk");
+        } else if is_key_pressed(KeyCode::Key3) {
+            runtime_armature.goto_and_play("run");
+        } else if is_key_pressed(KeyCode::Key4) {
+            runtime_armature.goto_and_play("sit");
         }
 
         let (mouse_x, mouse_y) = mouse_position();

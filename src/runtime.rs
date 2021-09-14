@@ -585,20 +585,15 @@ impl RuntimeArmature {
                                     bone_id,
                                     regions: Vec::new()
                                 };
-                                for i in 0..bone_timeline.rotation_frames.len()-1 {
-                                    let frame = &bone_timeline.rotation_frames[i];
-                                    let next_frame = &bone_timeline.rotation_frames[i+1];
+                                if bone_timeline.rotation_frames.len() == 1 {
+                                    let frame = &bone_timeline.rotation_frames[0];
                                     let rotation = bone_vec[bone_id].transform.rotation
                                         + frame.rotate.to_radians()
                                         * if frame.clockwise == 1 { -1.0 } else { 1.0 };
-                                    let next_rotation = bone_vec[bone_id].transform.rotation
-                                        + next_frame.rotate.to_radians()
-                                        * if next_frame.clockwise == 1 { -1.0 } else { 1.0 };
-
                                     animation_track.regions.push(
                                         SamplingRegion {
                                             start_sample: RotationSample{ theta: rotation },
-                                            end_sample: RotationSample{ theta: next_rotation },
+                                            end_sample: RotationSample{ theta: rotation },
                                             start_tick: tick_now,
                                             end_tick: tick_now + frame.duration as usize,
                                             tween_easing: TweenEasing::parse(
@@ -608,7 +603,32 @@ impl RuntimeArmature {
                                             )
                                         }
                                     );
-                                    tick_now += bone_timeline.rotation_frames[i].duration as usize;
+                                } else {
+                                    for i in 0..bone_timeline.rotation_frames.len()-1 {
+                                        let frame = &bone_timeline.rotation_frames[i];
+                                        let next_frame = &bone_timeline.rotation_frames[i+1];
+                                        let rotation = bone_vec[bone_id].transform.rotation
+                                            + frame.rotate.to_radians()
+                                            * if frame.clockwise == 1 { -1.0 } else { 1.0 };
+                                        let next_rotation = bone_vec[bone_id].transform.rotation
+                                            + next_frame.rotate.to_radians()
+                                            * if next_frame.clockwise == 1 { -1.0 } else { 1.0 };
+
+                                        animation_track.regions.push(
+                                            SamplingRegion {
+                                                start_sample: RotationSample{ theta: rotation },
+                                                end_sample: RotationSample{ theta: next_rotation },
+                                                start_tick: tick_now,
+                                                end_tick: tick_now + frame.duration as usize,
+                                                tween_easing: TweenEasing::parse(
+                                                    &mut bezier_buffer,
+                                                    frame.tween_easing,
+                                                    &frame.curve
+                                                )
+                                            }
+                                        );
+                                        tick_now += bone_timeline.rotation_frames[i].duration as usize;
+                                    }
                                 }
                                 animation_data.rotation_tracks.push(animation_track);
                             }
@@ -618,16 +638,10 @@ impl RuntimeArmature {
                                     bone_id,
                                     regions: Vec::new()
                                 };
-                                for i in 0..bone_timeline.translate_frames.len()-1 {
-                                    let frame = &bone_timeline.translate_frames[i];
-                                    let next_frame = &bone_timeline.translate_frames[i+1];
-
+                                if bone_timeline.translate_frames.len() == 1 {
+                                    let frame = &bone_timeline.translate_frames[0];
                                     let translation_x = bone_vec[bone_id].transform.x + frame.x;
                                     let translation_y = bone_vec[bone_id].transform.y + frame.y;
-
-                                    let next_translation_x = bone_vec[bone_id].transform.x + next_frame.x;
-                                    let next_translation_y = bone_vec[bone_id].transform.y + next_frame.y;
-
                                     animation_track.regions.push(
                                         SamplingRegion {
                                             start_sample: TransitionSample{
@@ -635,8 +649,8 @@ impl RuntimeArmature {
                                                 y: translation_y
                                             },
                                             end_sample: TransitionSample{
-                                                x: next_translation_x,
-                                                y: next_translation_y
+                                                x: translation_x,
+                                                y: translation_y
                                             },
                                             start_tick: tick_now,
                                             end_tick: tick_now + frame.duration as usize,
@@ -647,7 +661,38 @@ impl RuntimeArmature {
                                             )
                                         }
                                     );
-                                    tick_now += bone_timeline.translate_frames[i].duration as usize;
+                                } else {
+                                    for i in 0..bone_timeline.translate_frames.len()-1 {
+                                        let frame = &bone_timeline.translate_frames[i];
+                                        let next_frame = &bone_timeline.translate_frames[i+1];
+
+                                        let translation_x = bone_vec[bone_id].transform.x + frame.x;
+                                        let translation_y = bone_vec[bone_id].transform.y + frame.y;
+
+                                        let next_translation_x = bone_vec[bone_id].transform.x + next_frame.x;
+                                        let next_translation_y = bone_vec[bone_id].transform.y + next_frame.y;
+
+                                        animation_track.regions.push(
+                                            SamplingRegion {
+                                                start_sample: TransitionSample{
+                                                    x: translation_x,
+                                                    y: translation_y
+                                                },
+                                                end_sample: TransitionSample{
+                                                    x: next_translation_x,
+                                                    y: next_translation_y
+                                                },
+                                                start_tick: tick_now,
+                                                end_tick: tick_now + frame.duration as usize,
+                                                tween_easing: TweenEasing::parse(
+                                                    &mut bezier_buffer,
+                                                    frame.tween_easing,
+                                                    &frame.curve
+                                                )
+                                            }
+                                        );
+                                        tick_now += bone_timeline.translate_frames[i].duration as usize;
+                                    }
                                 }
                                 animation_data.transition_tracks.push(animation_track);
                             }
@@ -657,16 +702,10 @@ impl RuntimeArmature {
                                     bone_id,
                                     regions: Vec::new()
                                 };
-                                for i in 0..bone_timeline.scale_frames.len()-1 {
-                                    let frame = &bone_timeline.scale_frames[i];
-                                    let next_frame = &bone_timeline.scale_frames[i+1];
-
+                                if bone_timeline.scale_frames.len() == 1 {
+                                    let frame = &bone_timeline.scale_frames[0];
                                     let scale_x = frame.x;
                                     let scale_y = frame.y;
-
-                                    let next_scale_x = next_frame.x;
-                                    let next_scale_y = next_frame.y;
-
                                     animation_track.regions.push(
                                         SamplingRegion {
                                             start_sample: ScalingSample{
@@ -674,8 +713,8 @@ impl RuntimeArmature {
                                                 scale_y
                                             },
                                             end_sample: ScalingSample{
-                                                scale_x: next_scale_x,
-                                                scale_y: next_scale_y
+                                                scale_x,
+                                                scale_y
                                             },
                                             start_tick: tick_now,
                                             end_tick: tick_now + frame.duration as usize,
@@ -686,7 +725,38 @@ impl RuntimeArmature {
                                             )
                                         }
                                     );
-                                    tick_now += bone_timeline.scale_frames[i].duration as usize;
+                                } else {
+                                    for i in 0..bone_timeline.scale_frames.len()-1 {
+                                        let frame = &bone_timeline.scale_frames[i];
+                                        let next_frame = &bone_timeline.scale_frames[i+1];
+
+                                        let scale_x = frame.x;
+                                        let scale_y = frame.y;
+
+                                        let next_scale_x = next_frame.x;
+                                        let next_scale_y = next_frame.y;
+
+                                        animation_track.regions.push(
+                                            SamplingRegion {
+                                                start_sample: ScalingSample{
+                                                    scale_x,
+                                                    scale_y
+                                                },
+                                                end_sample: ScalingSample{
+                                                    scale_x: next_scale_x,
+                                                    scale_y: next_scale_y
+                                                },
+                                                start_tick: tick_now,
+                                                end_tick: tick_now + frame.duration as usize,
+                                                tween_easing: TweenEasing::parse(
+                                                    &mut bezier_buffer,
+                                                    frame.tween_easing,
+                                                    &frame.curve
+                                                )
+                                            }
+                                        );
+                                        tick_now += bone_timeline.scale_frames[i].duration as usize;
+                                    }
                                 }
                                 animation_data.scaling_tracks.push(animation_track);
                             }
@@ -1508,46 +1578,4 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
             },
         )
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::runtime::TweenEasing;
-
-    #[test]
-    fn test_easings() {
-        let easing = TweenEasing::Linear;
-        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
-        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
-        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
-        assert_eq!(0.0, test_1);
-        assert_eq!(3.0, test_2);
-        assert_eq!(1.5, test_3);
-
-        let easing = TweenEasing::QuadraticIn;
-        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
-        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
-        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
-        assert_eq!(0.0, test_1);
-        assert_eq!(3.0, test_2);
-        assert_ne!(1.5, test_3);
-        assert!(test_3 < 1.5);
-
-        let easing = TweenEasing::QuadraticOut;
-        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
-        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
-        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
-        assert_eq!(0.0, test_1);
-        assert_eq!(3.0, test_2);
-        assert_ne!(1.5, test_3);
-        assert!(test_3 > 1.5);
-
-        let easing = TweenEasing::QuadraticInOut;
-        let test_1 = easing.interpolate(0.0, 3.0, 0.0);
-        let test_2 = easing.interpolate(0.0, 3.0, 1.0);
-        let test_3 = easing.interpolate(0.0, 3.0, 0.5);
-        assert_eq!(0.0, test_1);
-        assert_eq!(3.0, test_2);
-        assert_eq!(1.5, test_3);
-    }
 }

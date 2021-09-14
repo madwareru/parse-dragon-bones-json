@@ -25,7 +25,7 @@ async fn main() {
 
         runtime_armature.update_animation(get_frame_time());
 
-        runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE);
+        runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE, DrawFlip::None);
         next_frame().await;
     }
 }

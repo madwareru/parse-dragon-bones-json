@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::shared_types::{default_one, default_name, default_no_easing, ColorTransform};
+use crate::shared_types::{default_one, default_one_frame, default_name, default_no_easing, ColorTransform};
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawAnimationData {
@@ -33,7 +33,7 @@ pub struct RawAnimationData {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawTranslationFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
@@ -47,7 +47,7 @@ pub struct RawTranslationFrame {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawRotationFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
@@ -61,7 +61,7 @@ pub struct RawRotationFrame {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawScaleFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
@@ -75,7 +75,7 @@ pub struct RawScaleFrame {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawGeneralFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
@@ -95,7 +95,7 @@ pub struct RawGeneralFrame {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawZOrderFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
@@ -118,7 +118,7 @@ pub struct RawSlotTimeline {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawDisplayFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
@@ -138,7 +138,7 @@ pub struct RawDisplayFrame {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawColorFrame {
-    #[serde(default)]
+    #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
     pub curve: Vec<f32>,
