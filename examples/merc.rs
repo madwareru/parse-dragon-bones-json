@@ -25,13 +25,13 @@ async fn main() {
         let screen_center_y = screen_height() / 2.0;
 
         if is_key_pressed(KeyCode::Key1) {
-            runtime_armature.goto_and_play("idle");
+            runtime_armature.goto_and_play("idle", Some(4));
         } else if is_key_pressed(KeyCode::Key2) {
-            runtime_armature.goto_and_play("walk");
+            runtime_armature.goto_and_play("walk", Some(3));
         } else if is_key_pressed(KeyCode::Key3) {
-            runtime_armature.goto_and_play("run");
+            runtime_armature.goto_and_play("run", Some(5));
         } else if is_key_pressed(KeyCode::Key4) {
-            runtime_armature.goto_and_play("sit");
+            runtime_armature.goto_and_play("sit", Some(5));
         }
 
         let (mouse_x, mouse_y) = mouse_position();

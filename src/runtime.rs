@@ -388,59 +388,77 @@ struct BoneInfo {
     is_dirty: bool,
 }
 
-pub struct RuntimeArmature {
-    ticked_time: f32,
+enum Tick {
+    Current,
+    FadeOut
+}
+
+#[derive(Clone)]
+struct SharedArmatureInfo {
     ms_per_tick: f32,
     ik: Arc<Vec<IkInfo>>,
-    bone_tree: Arena<BoneInfo>,
-    tree_handles: Vec<indextree::NodeId>,
     bone_lookup: Arc<HashMap<String, usize>>,
-    pose_bones: Arc<Vec<NamelessBone>>,
-    bones: Vec<NamelessBone>,
-    drawables: Vec<Box<dyn Drawable>>,
-    initial_matrices: Arc<Vec<nalgebra::Matrix3<f32>>>,
-    pose_matrices: Vec<nalgebra::Matrix3<f32>>,
-    diff_matrices: Vec<nalgebra::Matrix3<f32>>,
-    buffer_deque: VecDeque<indextree::NodeId>,
+    rest_pose_bones: Arc<Vec<NamelessBone>>,
     animations: Arc<Vec<AnimationData>>,
+    initial_matrices: Arc<Vec<nalgebra::Matrix3<f32>>>,
     start_animation_id: usize,
+}
+
+#[derive(Clone)]
+struct AnimationInfo {
+    ticked_time: f32,
+    bones: Vec<NamelessBone>,
     current_animation_id: usize,
     current_animation_ticks: usize
 }
 
+#[derive(Copy, Clone)]
+struct FadeOutInfo {
+    duration_in_frames: usize,
+    current_frame: usize
+}
+
+pub struct RuntimeArmature {
+    shared_info: SharedArmatureInfo,
+    fade_out_animation_info: AnimationInfo,
+    current_animation_info: AnimationInfo,
+    fade_out: Option<FadeOutInfo>,
+
+    bone_tree: Arena<BoneInfo>,
+    tree_handles: Vec<indextree::NodeId>,
+
+    bones: Vec<NamelessBone>,
+    pose_matrices: Vec<nalgebra::Matrix3<f32>>,
+    diff_matrices: Vec<nalgebra::Matrix3<f32>>,
+
+    drawables: Vec<Box<dyn Drawable>>,
+    buffer_deque: VecDeque<indextree::NodeId>
+}
+
 impl RuntimeArmature {
     pub fn get_bone_by_name(&self, bone_name: &str) -> Option<usize> {
-        self.bone_lookup.get(bone_name).map(|&it| it)
+        self.shared_info.bone_lookup.get(bone_name).map(|&it| it)
     }
 }
 
 impl RuntimeArmature {
     pub fn instantiate(&self) -> Self {
         let bones = self.bones.clone();
-        let bone_lookup = self.bone_lookup.clone();
-        let initial_matrices = self.initial_matrices.clone();
         let pose_matrices = self.pose_matrices.clone();
         let diff_matrices = self.diff_matrices.clone();
         let drawables = self.drawables.iter().map(|it| it.instantiate()).collect();
-        let ms_per_tick = self.ms_per_tick;
         Self {
-            ticked_time: 0.0,
-            ms_per_tick,
+            shared_info: self.shared_info.clone(),
+            fade_out_animation_info: self.fade_out_animation_info.clone(),
+            current_animation_info: self.current_animation_info.clone(),
+            fade_out: self.fade_out,
             bones,
-            pose_bones: self.pose_bones.clone(),
             drawables,
-            initial_matrices,
             pose_matrices,
             diff_matrices,
-            bone_lookup,
             bone_tree: self.bone_tree.clone(),
             tree_handles: self.tree_handles.clone(),
             buffer_deque: VecDeque::new(),
-            ik: self.ik.clone(),
-            animations: self.animations.clone(),
-            start_animation_id: self.start_animation_id,
-            current_animation_id: self.start_animation_id,
-            current_animation_ticks: 0
         }
     }
 
@@ -773,58 +791,137 @@ impl RuntimeArmature {
                         })
                         .unwrap_or(0);
 
+                let animation_info = AnimationInfo {
+                    ticked_time: 0.0,
+                    bones: bone_vec.clone(),
+                    current_animation_id: start_animation_id,
+                    current_animation_ticks: 0
+                };
+
                 (
                     name.clone(),
                     Self {
-                        ticked_time: 0.0,
-                        ms_per_tick: 1.0 / frame_rate as f32,
-                        pose_bones: Arc::new(bone_vec.clone()),
+                        shared_info: SharedArmatureInfo {
+                            ms_per_tick: 1.0 / frame_rate as f32,
+                            rest_pose_bones: Arc::new(bone_vec.clone()),
+                            initial_matrices: Arc::new(initial_matrices),
+                            bone_lookup: Arc::new(bone_lookup),
+                            animations: Arc::new(animations_vec),
+                            start_animation_id,
+                            ik
+                        },
+                        fade_out_animation_info: animation_info.clone(),
+                        current_animation_info: animation_info,
+                        fade_out: None,
                         bones: bone_vec,
                         drawables,
-                        initial_matrices: Arc::new(initial_matrices),
                         pose_matrices,
                         diff_matrices,
-                        bone_lookup: Arc::new(bone_lookup),
                         bone_tree,
                         tree_handles,
-                        buffer_deque: VecDeque::new(),
-                        ik,
-                        animations: Arc::new(animations_vec),
-                        start_animation_id,
-                        current_animation_id: start_animation_id,
-                        current_animation_ticks: 0
+                        buffer_deque: VecDeque::new()
                     }
                 )
             }
         }
     }
 
-    pub fn goto_and_play(&mut self, animation_name: &str) {
-        let animation_id = (0..self.animations.len()).find(|&id| {
-            self.animations[id].name.eq(animation_name)
+    pub fn goto_and_play(&mut self, animation_name: &str, fade_out: Option<usize>) {
+        let animation_id = (0..self.shared_info.animations.len()).find(|&id| {
+            self.shared_info.animations[id].name.eq(animation_name)
         });
         if let Some(animation_id) = animation_id {
-            self.current_animation_id = animation_id;
-            self.current_animation_ticks = 0;
+            std::mem::swap(&mut self.current_animation_info, &mut self.fade_out_animation_info);
+            self.fade_out = fade_out.map(|it| FadeOutInfo { duration_in_frames: it, current_frame: 0 });
+
+            self.current_animation_info.ticked_time = self.shared_info.ms_per_tick;
+            self.current_animation_info.current_animation_id = animation_id;
+            self.current_animation_info.current_animation_ticks = 0;
             for i in 0..self.bones.len() {
-                self.bones[i].transform = self.pose_bones[i].transform;
-            }
-            for &node_id in self.tree_handles.iter() {
-                let mut node = self.bone_tree.get_mut(node_id).unwrap().get_mut();
-                node.is_dirty = true;
+                self.current_animation_info.bones[i].transform = self.shared_info.rest_pose_bones[i].transform;
             }
         }
     }
 
-    pub fn update_animation(&mut self, dt: f32) {
-        self.ticked_time += dt;
-        while self.ticked_time >= self.ms_per_tick {
-            self.ticked_time -= self.ms_per_tick;
-            self.tick_animation();
+    fn shared_animation_update(&mut self, dt: f32) {
+        self.current_animation_info.ticked_time += dt;
+        while self.current_animation_info.ticked_time >= self.shared_info.ms_per_tick {
+            self.current_animation_info.ticked_time -= self.shared_info.ms_per_tick;
+            self.tick_animation(Tick::Current);
         }
+        self.fade_out = match self.fade_out {
+            None => {
+                {
+                    let bones_amount = self.current_animation_info.bones.len();
+                    for i in 0..bones_amount {
+                        let bone = self.current_animation_info.bones[i];
+                        let mut bones_mut = BonesMut { armature: self };
+                        bones_mut[i] = bone;
+                    }
+                }
+                None
+            },
+            Some(fade_out) => {
+                if fade_out.current_frame >= fade_out.duration_in_frames {
+                    {
+                        let bones_amount = self.current_animation_info.bones.len();
+                        for i in 0..bones_amount {
+                            let bone = self.current_animation_info.bones[i];
+                            let mut bones_mut = BonesMut { armature: self };
+                            bones_mut[i] = bone;
+                        }
+                    }
+                    None
+                } else {
+                    let current_delta = fade_out.current_frame as f32 / fade_out.duration_in_frames as f32;
+                    self.fade_out_animation_info.ticked_time += dt;
+                    while self.fade_out_animation_info.ticked_time >= self.shared_info.ms_per_tick {
+                        self.fade_out_animation_info.ticked_time -= self.shared_info.ms_per_tick;
+                        self.tick_animation(Tick::FadeOut);
+                    }
+                    {
+                        let bones_amount = self.current_animation_info.bones.len();
+                        for i in 0..bones_amount {
+                            let bone = self.current_animation_info.bones[i];
+                            let bone_fade = self.fade_out_animation_info.bones[i];
+                            let mut bones_mut = BonesMut { armature: self };
+                            bones_mut[i].transform.rotation = TweenEasing::Linear.interpolate(
+                                bone_fade.transform.rotation,
+                                bone.transform.rotation,
+                                current_delta
+                            );
+                            bones_mut[i].transform.x = TweenEasing::Linear.interpolate(
+                                bone_fade.transform.x,
+                                bone.transform.x,
+                                current_delta
+                            );
+                            bones_mut[i].transform.y = TweenEasing::Linear.interpolate(
+                                bone_fade.transform.y,
+                                bone.transform.y,
+                                current_delta
+                            );
+                            bones_mut[i].transform.scale_x = TweenEasing::Linear.interpolate(
+                                bone_fade.transform.scale_x,
+                                bone.transform.scale_x,
+                                current_delta
+                            );
+                            bones_mut[i].transform.scale_y = TweenEasing::Linear.interpolate(
+                                bone_fade.transform.scale_y,
+                                bone.transform.scale_y,
+                                current_delta
+                            );
+                        }
+                    }
+                    Some( FadeOutInfo {current_frame: fade_out.current_frame + 1, ..fade_out} )
+                }
+            }
+        };
         self.update_matrices();
+    }
+
+    pub fn update_animation(&mut self, dt: f32) {
+        self.shared_animation_update(dt);
         self.update_ik();
-        self.update_matrices();
     }
 
     pub fn update_animation_ex(
@@ -832,96 +929,91 @@ impl RuntimeArmature {
         dt: f32,
         post_process_animation: impl FnOnce(&mut BonesMut) -> (),
     ) {
-        self.ticked_time += dt;
-        while self.ticked_time >= self.ms_per_tick {
-            self.ticked_time -= self.ms_per_tick;
-            self.tick_animation();
-        }
-        self.update_matrices();
+        self.shared_animation_update(dt);
         {
             let mut bones_mut = BonesMut { armature: self };
             post_process_animation(&mut bones_mut);
         }
         self.update_matrices();
         self.update_ik();
-        self.update_matrices();
     }
 
-    fn tick_animation(&mut self) {
-        let play_times = self.animations[self.current_animation_id].play_times;
-        let duration_in_ticks = self.animations[self.current_animation_id].duration_in_ticks;
-        if play_times != 0 && duration_in_ticks * play_times <= self.current_animation_ticks {
+    fn tick_animation(&mut self, tick_kind: Tick) {
+        let current_animation_info = match tick_kind {
+            Tick::Current => &mut self.current_animation_info,
+            Tick::FadeOut => &mut self.fade_out_animation_info,
+        };
+        let play_times = self.shared_info.animations[current_animation_info.current_animation_id].play_times;
+        let duration_in_ticks = self.shared_info.animations[current_animation_info.current_animation_id].duration_in_ticks;
+        if play_times != 0 && duration_in_ticks * play_times <= current_animation_info.current_animation_ticks {
             return;
         }
-        if play_times == 0 && duration_in_ticks <= self.current_animation_ticks {
-            self.current_animation_ticks = self.current_animation_ticks % duration_in_ticks;
+        if play_times == 0 && duration_in_ticks <= current_animation_info.current_animation_ticks {
+            current_animation_info.current_animation_ticks = current_animation_info.current_animation_ticks % duration_in_ticks;
         }
 
-        let num_rotation_tracks = self.animations[self.current_animation_id].rotation_tracks.len();
-        let num_transition_tracks = self.animations[self.current_animation_id].transition_tracks.len();
-        let num_scaling_tracks = self.animations[self.current_animation_id].scaling_tracks.len();
+        let num_rotation_tracks = self.shared_info.animations[current_animation_info.current_animation_id].rotation_tracks.len();
+        let num_transition_tracks = self.shared_info.animations[current_animation_info.current_animation_id].transition_tracks.len();
+        let num_scaling_tracks = self.shared_info.animations[current_animation_info.current_animation_id].scaling_tracks.len();
         for i in 0..num_rotation_tracks {
             let (bone_id, current_frame) = {
-                let track = &self.animations[self.current_animation_id].rotation_tracks[i];
+                let track = &self.shared_info.animations[current_animation_info.current_animation_id].rotation_tracks[i];
                 (
                     track.bone_id,
                     track.regions.iter().find(|&it| {
-                        it.start_tick <= self.current_animation_ticks &&
-                        it.end_tick >= self.current_animation_ticks
+                        it.start_tick <= current_animation_info.current_animation_ticks &&
+                        it.end_tick >= current_animation_info.current_animation_ticks
                     })
                 )
             };
             if let Some(current_frame) = current_frame {
-                let interpolated_rotation = current_frame.interpolate(self.current_animation_ticks);
-                let mut bones_mut = BonesMut { armature: self };
-                bones_mut[bone_id].transform.rotation = interpolated_rotation.theta;
+                let interpolated_rotation = current_frame.interpolate(current_animation_info.current_animation_ticks);
+                current_animation_info.bones[bone_id].transform.rotation = interpolated_rotation.theta;
             }
         }
         for i in 0..num_transition_tracks {
             let (bone_id, current_frame) = {
-                let track = &self.animations[self.current_animation_id].transition_tracks[i];
+                let track = &self.shared_info.animations[current_animation_info.current_animation_id].transition_tracks[i];
                 (
                     track.bone_id,
                     track.regions.iter().find(|&it| {
-                        it.start_tick <= self.current_animation_ticks &&
-                            it.end_tick >= self.current_animation_ticks
+                        it.start_tick <= current_animation_info.current_animation_ticks &&
+                            it.end_tick >= current_animation_info.current_animation_ticks
                     })
                 )
             };
             if let Some(current_frame) = current_frame {
-                let interpolated_translation = current_frame.interpolate(self.current_animation_ticks);
-                let mut bones_mut = BonesMut { armature: self };
-                bones_mut[bone_id].transform.x = interpolated_translation.x;
-                bones_mut[bone_id].transform.y = interpolated_translation.y;
+                let interpolated_translation = current_frame.interpolate(current_animation_info.current_animation_ticks);
+                current_animation_info.bones[bone_id].transform.x = interpolated_translation.x;
+                current_animation_info.bones[bone_id].transform.y = interpolated_translation.y;
             }
         }
         for i in 0..num_scaling_tracks {
             let (bone_id, current_frame) = {
-                let track = &self.animations[self.current_animation_id].scaling_tracks[i];
+                let track = &self.shared_info.animations[current_animation_info.current_animation_id].scaling_tracks[i];
                 (
                     track.bone_id,
                     track.regions.iter().find(|&it| {
-                        it.start_tick <= self.current_animation_ticks &&
-                            it.end_tick >= self.current_animation_ticks
+                        it.start_tick <= current_animation_info.current_animation_ticks &&
+                            it.end_tick >= current_animation_info.current_animation_ticks
                     })
                 )
             };
             if let Some(current_frame) = current_frame {
-                let interpolated_scale = current_frame.interpolate(self.current_animation_ticks);
-                let mut bones_mut = BonesMut { armature: self };
-                bones_mut[bone_id].transform.scale_x = interpolated_scale.scale_x;
-                bones_mut[bone_id].transform.scale_y = interpolated_scale.scale_y;
+                let interpolated_scale = current_frame.interpolate(current_animation_info.current_animation_ticks);
+                current_animation_info.bones[bone_id].transform.scale_x = interpolated_scale.scale_x;
+                current_animation_info.bones[bone_id].transform.scale_y = interpolated_scale.scale_y;
             }
         }
-        self.current_animation_ticks += 1;
+        current_animation_info.current_animation_ticks += 1;
     }
 
     fn update_ik(&mut self) {
-        for ik_info_id in 0..self.ik.len() {
+        for ik_info_id in 0..self.shared_info.ik.len() {
             let (bone_id, effector_bone_id, chain_length, bend_positive) = {
-                let bone_id = self.get_bone_by_name(&self.ik[ik_info_id].bone).unwrap();
-                let effector_bone_id = self.get_bone_by_name(&self.ik[ik_info_id].target).unwrap();
-                (bone_id, effector_bone_id, self.ik[ik_info_id].chain_length, self.ik[ik_info_id].bend_positive)
+                let bone_id = self.get_bone_by_name(&self.shared_info.ik[ik_info_id].bone).unwrap();
+                let effector_bone_id = self.get_bone_by_name(&self.shared_info.ik[ik_info_id].target).unwrap();
+                (bone_id, effector_bone_id, self.shared_info.ik[ik_info_id].chain_length, self.shared_info.ik[ik_info_id].bend_positive)
             };
 
             let effector_position: nalgebra::Point3<f32> =
@@ -1001,6 +1093,7 @@ impl RuntimeArmature {
                 _ => panic!("unsupported ik chain length!")
             }
         }
+        self.update_matrices();
     }
 
     fn update_matrices(&mut self) {
@@ -1052,7 +1145,7 @@ impl RuntimeArmature {
                     0.0, 0.0, 1.0,
                 );
                 self.pose_matrices[bone_id] = parent_transform * transition_local * rotation_matrix * scale_matrix;
-                self.diff_matrices[bone_id] = self.pose_matrices[bone_id] * self.initial_matrices[bone_id];
+                self.diff_matrices[bone_id] = self.pose_matrices[bone_id] * self.shared_info.initial_matrices[bone_id];
             }
         }
     }
@@ -1085,7 +1178,7 @@ impl RuntimeArmature {
     }
 
     pub fn draw_ik_effectors(&self, position_x: f32, position_y: f32, scale: f32) {
-        for bone_id in self.ik.iter().map(|it| self.get_bone_by_name(&it.target).unwrap()) {
+        for bone_id in self.shared_info.ik.iter().map(|it| self.get_bone_by_name(&it.target).unwrap()) {
             let origin = self.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
             draw_circle(
                 position_x + origin.x * scale,
