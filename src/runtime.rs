@@ -945,6 +945,9 @@ impl RuntimeArmature {
         };
         let play_times = self.shared_info.animations[current_animation_info.current_animation_id].play_times;
         let duration_in_ticks = self.shared_info.animations[current_animation_info.current_animation_id].duration_in_ticks;
+        if duration_in_ticks == 0 {
+            return;
+        }
         if play_times != 0 && duration_in_ticks * play_times <= current_animation_info.current_animation_ticks {
             return;
         }
