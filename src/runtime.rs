@@ -418,11 +418,19 @@ struct FadeOutInfo {
     current_frame: usize
 }
 
+#[derive(Copy, Clone)]
+pub struct AdditiveAnimationInfo {
+    ticked_time: f32,
+    animation_id: usize,
+    animation_ticks: usize
+}
+
 pub struct RuntimeArmature {
     shared_info: SharedArmatureInfo,
     fade_out_animation_info: AnimationInfo,
     current_animation_info: AnimationInfo,
     fade_out: Option<FadeOutInfo>,
+    additive_animations: Vec<AdditiveAnimationInfo>,
 
     bone_tree: Arena<BoneInfo>,
     tree_handles: Vec<indextree::NodeId>,
@@ -442,6 +450,46 @@ impl RuntimeArmature {
 }
 
 impl RuntimeArmature {
+    pub fn get_bone_world_orientation(
+        &self,
+        bone_id: usize,
+        x_flip: DrawFlip
+    ) -> (f32, f32) {
+        let x_scale = match x_flip {
+            DrawFlip::None => 1.0,
+            DrawFlip::Flipped => -1.0
+        };
+        let dir = self.pose_matrices[bone_id] * nalgebra::Point3::new(self.bones[bone_id].length, 0.0, 1.0);
+        let dir = (
+            dir.x * x_scale,
+            dir.y
+        );
+        let len = (dir.0 * dir.0 + dir.1 * dir.1).sqrt();
+        (
+            dir.0 / len,
+            dir.1 / len
+        )
+    }
+
+    pub fn get_bone_world_position(
+        &self,
+        bone_id: usize,
+        position_x: f32,
+        position_y: f32,
+        scale: f32,
+        x_flip: DrawFlip
+    ) -> (f32, f32) {
+        let x_scale = match x_flip {
+            DrawFlip::None => scale,
+            DrawFlip::Flipped => -scale
+        };
+        let origin = self.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
+        (
+            position_x + origin.x * x_scale,
+            position_y + origin.y * scale
+        )
+    }
+
     pub fn instantiate(&self) -> Self {
         let bones = self.bones.clone();
         let pose_matrices = self.pose_matrices.clone();
@@ -451,6 +499,7 @@ impl RuntimeArmature {
             shared_info: self.shared_info.clone(),
             fade_out_animation_info: self.fade_out_animation_info.clone(),
             current_animation_info: self.current_animation_info.clone(),
+            additive_animations: self.additive_animations.clone(),
             fade_out: self.fade_out,
             bones,
             drawables,
@@ -812,6 +861,7 @@ impl RuntimeArmature {
                         },
                         fade_out_animation_info: animation_info.clone(),
                         current_animation_info: animation_info,
+                        additive_animations: Vec::new(),
                         fade_out: None,
                         bones: bone_vec,
                         drawables,
@@ -823,6 +873,21 @@ impl RuntimeArmature {
                     }
                 )
             }
+        }
+    }
+
+    pub fn stack_additive_animation(&mut self, animation_name: &str) {
+        let animation_id = (0..self.shared_info.animations.len()).find(|&id| {
+            self.shared_info.animations[id].name.eq(animation_name)
+        });
+        if let Some(animation_id) = animation_id {
+            self.additive_animations.push(
+                AdditiveAnimationInfo {
+                    ticked_time: 0.0,
+                    animation_id,
+                    animation_ticks: 0
+                }
+            )
         }
     }
 
@@ -916,6 +981,72 @@ impl RuntimeArmature {
                 }
             }
         };
+        self.update_matrices();
+        for idx in (0..self.additive_animations.len()).rev() {
+            let anim_id = self.additive_animations[idx].animation_id;
+            if self.additive_animations[idx].animation_ticks >= self.shared_info.animations[anim_id].duration_in_ticks {
+                self.additive_animations[idx] = self.additive_animations[self.additive_animations.len()-1];
+                self.additive_animations.remove(self.additive_animations.len()-1);
+                continue;
+            }
+            let num_rotation_tracks = self.shared_info.animations[anim_id].rotation_tracks.len();
+            let num_transition_tracks = self.shared_info.animations[anim_id].transition_tracks.len();
+            let num_scaling_tracks = self.shared_info.animations[anim_id].scaling_tracks.len();
+            for i in 0..num_rotation_tracks {
+                let (bone_id, current_frame) = {
+                    let track = &self.shared_info.animations[anim_id].rotation_tracks[i];
+                    (
+                        track.bone_id,
+                        track.regions.iter().find(|&it| {
+                            it.start_tick <= self.additive_animations[idx].animation_ticks &&
+                                it.end_tick >= self.additive_animations[idx].animation_ticks
+                        })
+                    )
+                };
+                if let Some(current_frame) = current_frame {
+                    let interpolated_rotation = current_frame.interpolate(self.additive_animations[idx].animation_ticks);
+                    let mut bones_mut = BonesMut { armature: self };
+                    bones_mut[bone_id].transform.rotation = interpolated_rotation.theta;
+                }
+            }
+            for i in 0..num_transition_tracks {
+                let (bone_id, current_frame) = {
+                    let track = &self.shared_info.animations[anim_id].transition_tracks[i];
+                    (
+                        track.bone_id,
+                        track.regions.iter().find(|&it| {
+                            it.start_tick <= self.additive_animations[idx].animation_ticks &&
+                                it.end_tick >= self.additive_animations[idx].animation_ticks
+                        })
+                    )
+                };
+                if let Some(current_frame) = current_frame {
+                    let interpolated_translation = current_frame.interpolate(self.additive_animations[idx].animation_ticks);
+                    let mut bones_mut = BonesMut { armature: self };
+                    bones_mut[bone_id].transform.x = interpolated_translation.x;
+                    bones_mut[bone_id].transform.y = interpolated_translation.y;
+                }
+            }
+            for i in 0..num_scaling_tracks {
+                let (bone_id, current_frame) = {
+                    let track = &self.shared_info.animations[anim_id].scaling_tracks[i];
+                    (
+                        track.bone_id,
+                        track.regions.iter().find(|&it| {
+                            it.start_tick <= self.additive_animations[idx].animation_ticks &&
+                                it.end_tick >= self.additive_animations[idx].animation_ticks
+                        })
+                    )
+                };
+                if let Some(current_frame) = current_frame {
+                    let interpolated_scale = current_frame.interpolate(self.additive_animations[idx].animation_ticks);
+                    let mut bones_mut = BonesMut { armature: self };
+                    bones_mut[bone_id].transform.scale_x = interpolated_scale.scale_x;
+                    bones_mut[bone_id].transform.scale_y = interpolated_scale.scale_y;
+                }
+            }
+            self.additive_animations[idx].animation_ticks += 1;
+        }
         self.update_matrices();
     }
 
@@ -1571,15 +1702,15 @@ impl<'a> BonesMut<'a> {
         scale: f32,
         x_flip: DrawFlip
     ) -> (f32, f32) {
-        let x_scale = match x_flip {
-            DrawFlip::None => scale,
-            DrawFlip::Flipped => -scale
-        };
-        let origin = self.armature.pose_matrices[bone_id] * nalgebra::Point3::new(0.0, 0.0, 1.0);
-        (
-            position_x + origin.x * x_scale,
-            position_y + origin.y * scale
-        )
+        self.armature.get_bone_world_position(bone_id, position_x, position_y, scale, x_flip)
+    }
+
+    pub fn get_bone_world_orientation(
+        &self,
+        bone_id: usize,
+        x_flip: DrawFlip
+    ) -> (f32, f32) {
+        self.armature.get_bone_world_orientation(bone_id, x_flip)
     }
 }
 
