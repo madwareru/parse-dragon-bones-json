@@ -1,0 +1,34 @@
+AnimationStateMachineConfig (
+    start_state: Normal,
+    params: {Speed: 0.0},
+    states: {
+        Jumping: AnimationState(fade_out_in_frames: 2, action: Play(Jump)),
+        Falling: AnimationState(fade_out_in_frames: 4, action: Play(Fall)),
+        Crouching: AnimationState(
+            fade_out_in_frames: 2,
+            action: PlayBySelector(
+                inner_fade_out_in_frames: 4,
+                param: Speed,
+                cases: [
+                    (CrouchBackward, CappedBy(-0.01)),
+                    (Sit, CappedBy(0.01)),
+                    (Crouch, Uncapped)
+                ]
+            )
+        ),
+        Normal: AnimationState(
+            fade_out_in_frames: 2,
+            action: PlayBySelector(
+                inner_fade_out_in_frames: 4,
+                param: Speed,
+                cases: [
+                    (RunBackward, CappedBy(-0.51)),
+                    (WalkBackward, CappedBy(-0.01)),
+                    (Idle, CappedBy(0.01)),
+                    (Walk, CappedBy(0.51)),
+                    (Run, Uncapped)
+                ]
+            )
+        )
+    }
+)

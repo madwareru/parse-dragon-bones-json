@@ -12,6 +12,9 @@ use std::ops::IndexMut;
 use indextree::{Arena};
 use crate::skeleton_data::ik::IkInfo;
 use std::fmt::Debug;
+use std::hash::Hash;
+use serde::Deserialize;
+use std::cmp::Ordering;
 
 const COLORS: &[Color] = &[
     GOLD,
@@ -912,8 +915,9 @@ impl RuntimeArmature {
         self.current_animation_info.ticked_time += dt;
         while self.current_animation_info.ticked_time >= self.shared_info.ms_per_tick {
             self.current_animation_info.ticked_time -= self.shared_info.ms_per_tick;
-            self.tick_animation(Tick::Current);
+            self.current_animation_info.current_animation_ticks += 1;
         }
+        self.tick_animation(Tick::Current);
         self.fade_out = match self.fade_out {
             None => {
                 {
@@ -942,6 +946,7 @@ impl RuntimeArmature {
                     self.fade_out_animation_info.ticked_time += dt;
                     while self.fade_out_animation_info.ticked_time >= self.shared_info.ms_per_tick {
                         self.fade_out_animation_info.ticked_time -= self.shared_info.ms_per_tick;
+                        self.fade_out_animation_info.current_animation_ticks += 1;
                         self.tick_animation(Tick::FadeOut);
                     }
                     {
@@ -981,12 +986,15 @@ impl RuntimeArmature {
                 }
             }
         };
-        self.update_matrices();
         for idx in (0..self.additive_animations.len()).rev() {
             let anim_id = self.additive_animations[idx].animation_id;
-            if self.additive_animations[idx].animation_ticks >= self.shared_info.animations[anim_id].duration_in_ticks {
-                self.additive_animations[idx] = self.additive_animations[self.additive_animations.len()-1];
-                self.additive_animations.remove(self.additive_animations.len()-1);
+            self.additive_animations[idx].ticked_time += dt;
+            while self.additive_animations[idx].ticked_time >= self.shared_info.ms_per_tick {
+                self.additive_animations[idx].ticked_time -= self.shared_info.ms_per_tick;
+                self.additive_animations[idx].animation_ticks += 1;
+            }
+            if self.additive_animations[idx].animation_ticks > self.shared_info.animations[anim_id].duration_in_ticks {
+                self.additive_animations.remove(idx);
                 continue;
             }
             let num_rotation_tracks = self.shared_info.animations[anim_id].rotation_tracks.len();
@@ -1045,7 +1053,6 @@ impl RuntimeArmature {
                     bones_mut[bone_id].transform.scale_y = interpolated_scale.scale_y;
                 }
             }
-            self.additive_animations[idx].animation_ticks += 1;
         }
         self.update_matrices();
     }
@@ -1139,7 +1146,6 @@ impl RuntimeArmature {
                 current_animation_info.bones[bone_id].transform.scale_y = interpolated_scale.scale_y;
             }
         }
-        current_animation_info.current_animation_ticks += 1;
     }
 
     fn update_ik(&mut self) {
@@ -1732,6 +1738,154 @@ impl<'a> IndexMut<usize> for BonesMut<'a> {
             node.is_dirty = true;
         }
         &mut self.armature.bones[index]
+    }
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+pub enum Cap {
+    CappedBy(f32),
+    Uncapped
+}
+impl std::cmp::PartialOrd for Cap {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (*self, *other) {
+            (Cap::Uncapped, Cap::Uncapped) => Some(Ordering::Less),
+            (Cap::Uncapped, _) => Some(Ordering::Greater),
+            (_, Cap::Uncapped) => Some(Ordering::Less),
+            (Cap::CappedBy(l), Cap::CappedBy(r)) => l.partial_cmp(&r)
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub enum AnimationAction<TParam, TOutputState>
+where
+    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+{
+    Play(TOutputState),
+    PlayBySelector{
+        inner_fade_out_in_frames: usize,
+        param: TParam,
+        cases: Vec<(TOutputState, Cap)>
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct AnimationState<TParam, TOutputState>
+where
+    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+{
+    pub fade_out_in_frames: usize,
+    pub action: AnimationAction<TParam, TOutputState>
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct AnimationStateMachineConfig<TParam, TInputState, TOutputState>
+where
+    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+{
+    pub start_state: TInputState,
+    pub params: HashMap<TParam, f32>,
+    pub states: HashMap<TInputState, AnimationState<TParam, TOutputState>>
+}
+
+pub struct AnimationStateMachine<TParam, TInputState, TOutputState>
+where
+    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+{
+    config: AnimationStateMachineConfig<TParam, TInputState, TOutputState>,
+    input_state: TInputState,
+    output_state: TOutputState,
+}
+
+impl<TParam, TInputState, TOutputState> AnimationStateMachine<TParam, TInputState, TOutputState>
+where
+    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+{
+    pub fn new(config: AnimationStateMachineConfig<TParam, TInputState, TOutputState>) -> Option<Self> {
+        let mut config = config;
+        for state in config.states.iter_mut() {
+            match &mut state.1.action {
+                AnimationAction::Play(_) => {}
+                AnimationAction::PlayBySelector { cases, .. } => {
+                    cases.sort_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap_or(Ordering::Less));
+                }
+            }
+        }
+        let input_state = config.start_state;
+        let state = config.states.get(&input_state)?;
+        let output_state = match &state.action {
+            AnimationAction::Play(value) => *value,
+            AnimationAction::PlayBySelector { param, cases, .. } => {
+                let param_value = config.params.get(param)?;
+                let found_capped = cases
+                    .iter()
+                    .find(|&it| match it.1 {
+                        Cap::CappedBy(x) => x >= *param_value,
+                        Cap::Uncapped => false
+                    });
+                if let Some(capped) = found_capped {
+                    capped.0
+                } else {
+                    let uncapped = cases
+                        .iter()
+                        .find(|it| if let Cap::Uncapped = it.1 {true} else {false})?;
+                    uncapped.0
+                }
+            }
+        };
+        Some(Self {
+            config,
+            input_state,
+            output_state
+        })
+    }
+    pub fn set_input_state(&mut self, state: TInputState) {
+        self.input_state = state;
+    }
+    pub fn set_parameter(&mut self, param: TParam, value: f32) {
+        match self.config.params.get_mut(&param) {
+            None => {}
+            Some(x) => *x = value
+        }
+    }
+    pub fn actualize(&mut self, armature: &mut RuntimeArmature) -> Option<()> {
+        let state = self.config.states.get(&self.input_state)?;
+        let (fade_out, output_state) = match &state.action {
+            AnimationAction::Play(value) => (state.fade_out_in_frames, *value),
+            AnimationAction::PlayBySelector { inner_fade_out_in_frames, param, cases,  } => {
+                let param_value = self.config.params.get(param)?;
+                let found_capped = cases
+                    .iter()
+                    .find(|&it| match it.1 {
+                        Cap::CappedBy(x) => x >= *param_value,
+                        Cap::Uncapped => false
+                    });
+                if let Some(capped) = found_capped {
+                    ( *inner_fade_out_in_frames, capped.0 )
+                } else {
+                    let uncapped = cases
+                        .iter()
+                        .find(|it| if let Cap::Uncapped = it.1 {true} else {false})?;
+                    ( *inner_fade_out_in_frames, uncapped.0 )
+                }
+            }
+        };
+        if self.output_state == output_state {
+            None
+        } else {
+            self.output_state = output_state;
+            armature.goto_and_play(self.output_state.into(), Some(fade_out));
+            Some(())
+        }
     }
 }
 

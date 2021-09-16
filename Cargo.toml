@@ -12,4 +12,4 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 indextree = "4.3.1"
 image = "0.23.14"
-flo_curves = "0.5"
+ron = "0.6.5"
