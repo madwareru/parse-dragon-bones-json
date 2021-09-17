@@ -22,15 +22,15 @@ async fn main() {
         let screen_center_y = screen_height() / 2.0;
 
         if is_key_pressed(KeyCode::Key1) {
-            runtime_armature.goto_and_play("rooster_idle_anim");
+            runtime_armature.goto_and_play("rooster_idle_anim", None);
         } else if is_key_pressed(KeyCode::Key2) {
-            runtime_armature.goto_and_play("rooster_eat_anim");
+            runtime_armature.goto_and_play("rooster_eat_anim", None);
         } else if is_key_pressed(KeyCode::Key3) {
-            runtime_armature.goto_and_play("rooster_idle_sleep_anim");
+            runtime_armature.goto_and_play("rooster_idle_sleep_anim", None);
         } else if is_key_pressed(KeyCode::Key4) {
-            runtime_armature.goto_and_play("rooster_walk_anim");
+            runtime_armature.goto_and_play("rooster_walk_anim", None);
         } else if is_key_pressed(KeyCode::Key5) {
-            runtime_armature.goto_and_play("rooster_run_anim");
+            runtime_armature.goto_and_play("rooster_run_anim", None);
         }
 
         runtime_armature.update_animation(get_frame_time() * 1.5);
