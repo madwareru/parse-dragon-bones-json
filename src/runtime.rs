@@ -454,6 +454,7 @@ struct SharedArmatureInfo {
     initial_matrices: Arc<Vec<nalgebra::Matrix3<f32>>>,
     start_animation_id: usize,
     initial_tints: Arc<Vec<(i32, i32, i32, i32)>>,
+    initial_display_ids: Arc<Vec<Option<usize>>>
 }
 
 #[derive(Clone)]
@@ -597,6 +598,7 @@ impl RuntimeArmature {
                 }
 
                 let mut initial_tints = Vec::new();
+                let mut initial_display_ids = Vec::new();
                 for i in 0..slots.len() {
                     slot_lookup.insert(slots[i].name.clone(), slot_vec.len());
                     initial_tints.push(
@@ -607,17 +609,19 @@ impl RuntimeArmature {
                             slots[i].color_transform.blue_multiplier
                         )
                     );
+                    let display_id = if slots[i].display_id >= 0 {
+                        Some(slots[i].display_id as usize)
+                    } else {
+                        None
+                    };
+                    initial_display_ids.push(display_id);
                     slot_vec.push(SlotInfo {
                         tint_a: slots[i].color_transform.alpha_multiplier,
                         tint_r: slots[i].color_transform.red_multiplier,
                         tint_g: slots[i].color_transform.green_multiplier,
                         tint_b: slots[i].color_transform.blue_multiplier,
                         draw_order: i,
-                        display_id: if slots[i].display_id >= 0 {
-                            Some(slots[i].display_id as usize)
-                        } else {
-                            None
-                        } ,
+                        display_id,
                         drawable_indices: std::ops::Range::default()
                     });
                 }
@@ -1048,6 +1052,7 @@ impl RuntimeArmature {
                             rest_pose_bones: Arc::new(bone_vec.clone()),
                             initial_matrices: Arc::new(initial_matrices),
                             initial_tints: Arc::new(initial_tints),
+                            initial_display_ids: Arc::new(initial_display_ids),
                             bone_lookup: Arc::new(bone_lookup),
                             slot_lookup: Arc::new(slot_lookup),
                             animations: Arc::new(animations_vec),
@@ -1102,6 +1107,7 @@ impl RuntimeArmature {
                 self.current_animation_info.bones[i].transform = self.shared_info.rest_pose_bones[i].transform;
             }
             for i in 0..self.slots.len() {
+                self.slots[i].display_id = self.shared_info.initial_display_ids[i];
                 self.slots[i].tint_a = self.shared_info.initial_tints[i].0;
                 self.slots[i].tint_r = self.shared_info.initial_tints[i].1;
                 self.slots[i].tint_g = self.shared_info.initial_tints[i].2;

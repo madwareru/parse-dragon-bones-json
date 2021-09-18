@@ -83,6 +83,10 @@ async fn main() {
 
     let mut last_shot = 0.0;
     const FIRE_RATE: f32 = 0.15;
+    const RIFLE: usize = 0;
+    const SHOTGUN: usize = 1;
+
+    let mut weapon = RIFLE;
 
     let mut vertical_speed = 0.0f32;
 
@@ -155,11 +159,15 @@ async fn main() {
         animation_state_machine.actualize(&mut mercenary_armature);
 
         if is_key_pressed(KeyCode::Key1) {
-            mercenary_armature.set_slot_display_id("Gun1", Some(0));
+            weapon = RIFLE;
+        }
+        if is_key_pressed(KeyCode::Key2) {
+            weapon = SHOTGUN;
         }
 
-        if is_key_pressed(KeyCode::Key2) {
-            mercenary_armature.set_slot_display_id("Gun1", Some(1));
+        match weapon {
+            SHOTGUN => mercenary_armature.set_slot_display_id("Gun1", Some(1)),
+            _ => mercenary_armature.set_slot_display_id("Gun1", Some(0))
         }
 
         if is_mouse_button_down(MouseButton::Left) && (get_time() as f32 - last_shot) > FIRE_RATE {
