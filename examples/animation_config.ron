@@ -1,10 +1,10 @@
-AnimationStateMachineConfig (
+(
     start_state: Normal,
     params: {Speed: 0.0},
     states: {
-        Jumping: AnimationState(fade_out_in_frames: 2, action: Play(Jump)),
-        Falling: AnimationState(fade_out_in_frames: 4, action: Play(Fall)),
-        Crouching: AnimationState(
+        Jumping: (fade_out_in_frames: 2, action: Play(Jump)),
+        Falling: (fade_out_in_frames: 4, action: Play(Fall)),
+        Crouching: (
             fade_out_in_frames: 2,
             action: PlayBySelector(
                 inner_fade_out_in_frames: 4,
@@ -16,7 +16,7 @@ AnimationStateMachineConfig (
                 ]
             )
         ),
-        Normal: AnimationState(
+        Normal: (
             fade_out_in_frames: 2,
             action: PlayBySelector(
                 inner_fade_out_in_frames: 4,

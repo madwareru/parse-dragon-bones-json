@@ -11,7 +11,7 @@ async fn main() {
     let dragon_bones_data = DragonBonesData::load(skeleton_bytes, atlas_bytes, texture_bytes);
     let mut runtime_armature = dragon_bones_data.instantiate_armature("armatureName").unwrap();
 
-    let mut draw_buffer = BufferedDrawBatcher::new();
+    let mut runtime = DragonBonesRuntime::new();
 
     loop {
         clear_background(Color::new(0.48, 0.46, 0.5, 1.0));
@@ -22,20 +22,20 @@ async fn main() {
         let screen_center_y = screen_height() / 2.0;
 
         if is_key_pressed(KeyCode::Key1) {
-            runtime_armature.goto_and_play("rooster_idle_anim");
+            runtime_armature.goto_and_play("rooster_idle_anim", Some(2));
         } else if is_key_pressed(KeyCode::Key2) {
-            runtime_armature.goto_and_play("rooster_eat_anim");
+            runtime_armature.goto_and_play("rooster_eat_anim", Some(2));
         } else if is_key_pressed(KeyCode::Key3) {
-            runtime_armature.goto_and_play("rooster_idle_sleep_anim");
+            runtime_armature.goto_and_play("rooster_idle_sleep_anim", Some(2));
         } else if is_key_pressed(KeyCode::Key4) {
-            runtime_armature.goto_and_play("rooster_walk_anim");
+            runtime_armature.goto_and_play("rooster_walk_anim", Some(2));
         } else if is_key_pressed(KeyCode::Key5) {
-            runtime_armature.goto_and_play("rooster_run_anim");
+            runtime_armature.goto_and_play("rooster_run_anim", Some(2));
         }
 
-        runtime_armature.update_animation(get_frame_time() * 1.5);
+        runtime_armature.update_animation(get_frame_time());
 
-        runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE, DrawFlip::None);
+        runtime_armature.draw(&mut runtime, screen_center_x, screen_center_y, SCALE, DrawFlip::None);
         next_frame().await;
     }
 }

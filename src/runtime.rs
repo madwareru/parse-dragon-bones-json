@@ -15,6 +15,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use serde::Deserialize;
 use std::cmp::Ordering;
+use nalgebra::{Matrix3};
 
 const COLORS: &[Color] = &[
     GOLD,
@@ -41,20 +42,49 @@ pub enum DrawFlip {
     Flipped
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+struct RenderQueueEntry {
+    draw_order: usize,
+    drawable_id: usize
+}
+impl PartialOrd for RenderQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.draw_order.partial_cmp(&other.draw_order)
+    }
+}
+impl Ord for RenderQueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.draw_order.cmp(&other.draw_order)
+    }
+}
+
+pub struct DragonBonesRuntime {
+    batcher: BufferedDrawBatcher,
+    render_queue: Vec<RenderQueueEntry>
+}
+impl DragonBonesRuntime {
+    pub fn new() -> Self {
+        Self {
+            batcher: BufferedDrawBatcher::new(),
+            render_queue: Vec::new()
+        }
+    }
+}
+
 pub struct BufferedDrawBatcher {
     vertex_buffer: Vec<Vertex>,
     index_buffer: Vec<u16>,
 }
 
 impl BufferedDrawBatcher {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             vertex_buffer: Vec::new(),
             index_buffer: Vec::new(),
         }
     }
 
-    pub fn renderize_next_triangles(
+    fn renderize_next_triangles(
         &mut self,
         vertices: impl Iterator<Item=Vertex>,
         indices: impl Iterator<Item=u16>,
@@ -77,7 +107,6 @@ impl BufferedDrawBatcher {
 }
 
 pub trait Drawable {
-    fn get_draw_order(&self) -> i32;
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
@@ -91,13 +120,35 @@ pub trait Drawable {
     fn instantiate(&self) -> Box<dyn Drawable>;
 }
 
+#[derive(Copy, Clone)]
+pub struct BBoxDrawable { // just a stub. Maybe some day we will render it, but not now
+    _nop: u8
+}
+impl BBoxDrawable {
+    pub fn new() -> Self { Self{ _nop: 0 } }
+}
+impl Drawable for BBoxDrawable {
+    fn draw(
+        &self,
+        _draw_batcher: &mut BufferedDrawBatcher,
+        _pose_matrices: &[Matrix3<f32>],
+        _diff_matrices: &[Matrix3<f32>],
+        _position_x: f32,
+        _position_y: f32,
+        _scale: f32,
+        _x_flipped: bool
+    ) {}
+    fn instantiate(&self) -> Box<dyn Drawable> {
+        Box::new(Self{ _nop: 0 })
+    }
+}
+
 #[derive(Clone)]
 pub struct MeshDrawable {
     mesh_data: Arc<PurifiedMeshData<u16>>,
     texture: Texture2D,
     atlas_size: [f32; 2],
-    atlas_sub_texture: SubTexture,
-    draw_order: i32,
+    atlas_sub_texture: SubTexture
 }
 
 impl MeshDrawable {
@@ -105,22 +156,18 @@ impl MeshDrawable {
         mesh_data: &PurifiedMeshData<u16>,
         texture: Texture2D,
         atlas_size: [f32; 2],
-        atlas_sub_texture: SubTexture,
-        draw_order: i32,
+        atlas_sub_texture: SubTexture
     ) -> Self {
         Self {
             mesh_data: Arc::new(mesh_data.clone()),
             texture,
             atlas_size,
-            atlas_sub_texture,
-            draw_order,
+            atlas_sub_texture
         }
     }
 }
 
 impl Drawable for MeshDrawable {
-    fn get_draw_order(&self) -> i32 { self.draw_order }
-
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
@@ -168,13 +215,11 @@ impl Drawable for MeshDrawable {
         let texture = self.texture;
         let atlas_size = self.atlas_size;
         let atlas_sub_texture = self.atlas_sub_texture.clone();
-        let draw_order = self.draw_order;
         Box::new(Self {
             mesh_data,
             texture,
             atlas_size,
-            atlas_sub_texture,
-            draw_order,
+            atlas_sub_texture
         })
     }
 }
@@ -188,7 +233,6 @@ pub struct ImageDrawable {
     transform: PurifiedTransform,
     vertices: [nalgebra::Point3<f32>; 4],
     uvs: [(f32, f32); 4],
-    draw_order: i32,
 }
 
 impl ImageDrawable {
@@ -198,8 +242,7 @@ impl ImageDrawable {
         atlas_sub_texture: SubTexture,
         parent_bone_id: usize,
         transform: RawTransform,
-        pivot: crate::shared_types::Point,
-        draw_order: i32,
+        pivot: crate::shared_types::Point
     ) -> Self {
         let left = -pivot.x * atlas_sub_texture.frame_rect.width;
         let top = -pivot.y * atlas_sub_texture.frame_rect.height;
@@ -272,15 +315,12 @@ impl ImageDrawable {
             parent_bone_id,
             transform: transform.into(),
             vertices,
-            uvs,
-            draw_order,
+            uvs
         }
     }
 }
 
 impl Drawable for ImageDrawable {
-    fn get_draw_order(&self) -> i32 { self.draw_order }
-
     fn draw(
         &self,
         draw_batcher: &mut BufferedDrawBatcher,
@@ -325,7 +365,6 @@ impl Drawable for ImageDrawable {
         let texture = self.texture;
         let atlas_size = self.atlas_size;
         let atlas_sub_texture = self.atlas_sub_texture.clone();
-        let draw_order = self.draw_order;
         Box::new(Self {
             texture,
             atlas_size,
@@ -333,8 +372,7 @@ impl Drawable for ImageDrawable {
             parent_bone_id: self.parent_bone_id,
             transform: self.transform,
             vertices: self.vertices.clone(),
-            uvs: self.uvs,
-            draw_order,
+            uvs: self.uvs
         })
     }
 }
@@ -391,6 +429,7 @@ struct BoneInfo {
     is_dirty: bool,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
 enum Tick {
     Current,
     FadeOut
@@ -401,6 +440,7 @@ struct SharedArmatureInfo {
     ms_per_tick: f32,
     ik: Arc<Vec<IkInfo>>,
     bone_lookup: Arc<HashMap<String, usize>>,
+    slot_lookup: Arc<HashMap<String, usize>>,
     rest_pose_bones: Arc<Vec<NamelessBone>>,
     animations: Arc<Vec<AnimationData>>,
     initial_matrices: Arc<Vec<nalgebra::Matrix3<f32>>>,
@@ -428,6 +468,13 @@ pub struct AdditiveAnimationInfo {
     animation_ticks: usize
 }
 
+#[derive(Clone)]
+struct SlotInfo {
+    draw_order: usize,
+    display_id: usize,
+    drawable_indices: std::ops::Range<usize>,
+}
+
 pub struct RuntimeArmature {
     shared_info: SharedArmatureInfo,
     fade_out_animation_info: AnimationInfo,
@@ -442,6 +489,7 @@ pub struct RuntimeArmature {
     pose_matrices: Vec<nalgebra::Matrix3<f32>>,
     diff_matrices: Vec<nalgebra::Matrix3<f32>>,
 
+    slots: Vec<SlotInfo>,
     drawables: Vec<Box<dyn Drawable>>,
     buffer_deque: VecDeque<indextree::NodeId>
 }
@@ -505,6 +553,7 @@ impl RuntimeArmature {
             additive_animations: self.additive_animations.clone(),
             fade_out: self.fade_out,
             bones,
+            slots: self.slots.clone(),
             drawables,
             pose_matrices,
             diff_matrices,
@@ -526,29 +575,50 @@ impl RuntimeArmature {
                 let mut drawables: Vec<Box<dyn Drawable>> = Vec::new();
                 let mut bone_vec = Vec::with_capacity(bones.len());
                 let mut bone_lookup = HashMap::new();
+
+                let mut slot_vec = Vec::with_capacity(slots.len());
+                let mut slot_lookup = HashMap::new();
                 for bone in bones.iter() {
                     bone_lookup.insert(bone.name.clone(), bone_vec.len());
                     bone_vec.push(NamelessBone::from((bone, &bones[..])));
                 }
+                for i in 0..slots.len() {
+                    slot_lookup.insert(slots[i].name.clone(), slot_vec.len());
+                    slot_vec.push(SlotInfo {
+                        draw_order: i,
+                        display_id: slots[i].display_id as usize,
+                        drawable_indices: std::ops::Range::default()
+                    });
+                }
                 for skin in skins.iter() {
                     for slot in skin.slots.iter() {
-                        let (parent_bone_name, draw_order) =
+                        let (parent_bone_name, slot_id) =
                             slots.iter().enumerate().find_map(|(id, it)| {
                                 if it.name.eq(&slot.name) { Some((&it.parent as &str, id as i32)) } else { None }
                             }).unwrap_or(("", i32::MIN));
                         let parent_bone_id = (0..bones.len()).find(|&id| bones[id].name.eq(parent_bone_name));
+                        let mut first_drawable = true;
                         for display in slot.displays.iter() {
                             let sub_texture = display.get_rect(atlas);
+                            if slot_id >= 0 {
+                                if first_drawable {
+                                    first_drawable = false;
+                                    slot_vec[slot_id as usize].drawable_indices.start = drawables.len();
+                                    slot_vec[slot_id as usize].drawable_indices.end = drawables.len() + 1;
+                                } else {
+                                    slot_vec[slot_id as usize].drawable_indices.end = drawables.len() + 1;
+                                }
+                            }
                             if let Some(mesh) = PurifiedMeshData::<u16>::try_from(display, bones.len()) {
                                 drawables.push(Box::new(
                                     MeshDrawable::new(
                                         &mesh,
                                         texture,
                                         [atlas.width as f32, atlas.height as f32],
-                                        sub_texture.unwrap(),
-                                        draw_order,
+                                        sub_texture.unwrap()
                                     )
                                 ));
+                                continue;
                             }
                             if let &RawDisplay::Image { pivot, transform, .. } = display {
                                 drawables.push(Box::new(
@@ -558,11 +628,12 @@ impl RuntimeArmature {
                                         sub_texture.unwrap(),
                                         parent_bone_id.unwrap(),
                                         transform,
-                                        pivot,
-                                        draw_order,
+                                        pivot
                                     )
                                 ));
+                                continue;
                             }
+                            drawables.push(Box::new(BBoxDrawable::new()));
                         }
                     }
                 }
@@ -642,8 +713,26 @@ impl RuntimeArmature {
                         play_times,
                         rotation_tracks: Vec::new(),
                         transition_tracks: Vec::new(),
-                        scaling_tracks: Vec::new()
+                        scaling_tracks: Vec::new(),
+                        slot_animation_tracks: Vec::new()
                     };
+                    for slot_timeline in anim.slot_timelines.iter() {
+                        let slot_id = *slot_lookup.get(&slot_timeline.name).unwrap();
+                        let mut animation_track = SlotAnimationTrack {
+                            slot_id,
+                            regions: Vec::new()
+                        };
+                        let mut tick_now: usize = 0;
+                        for frame_timeline in slot_timeline.display_frames.iter() {
+                            animation_track.regions.push(SlotDisplayIdRegion {
+                                display_id: frame_timeline.value as usize,
+                                start_tick: tick_now,
+                                end_tick: tick_now + frame_timeline.duration as usize
+                            });
+                            tick_now += frame_timeline.duration as usize;
+                        }
+                        animation_data.slot_animation_tracks.push(animation_track);
+                    }
                     for bone_timeline in anim.bone_timelines.iter() {
                         let bone_id = *bone_lookup.get(&bone_timeline.bone_name).unwrap();
                         if bone_timeline.frames.len() > 0 {
@@ -858,6 +947,7 @@ impl RuntimeArmature {
                             rest_pose_bones: Arc::new(bone_vec.clone()),
                             initial_matrices: Arc::new(initial_matrices),
                             bone_lookup: Arc::new(bone_lookup),
+                            slot_lookup: Arc::new(slot_lookup),
                             animations: Arc::new(animations_vec),
                             start_animation_id,
                             ik
@@ -867,6 +957,7 @@ impl RuntimeArmature {
                         additive_animations: Vec::new(),
                         fade_out: None,
                         bones: bone_vec,
+                        slots: slot_vec,
                         drawables,
                         pose_matrices,
                         diff_matrices,
@@ -1093,6 +1184,29 @@ impl RuntimeArmature {
             current_animation_info.current_animation_ticks = current_animation_info.current_animation_ticks % duration_in_ticks;
         }
 
+        if tick_kind == Tick::Current {
+            // We don't need to animate slots in fade out, so this works only for current animation info
+            // and does a direct modification for slots in armature
+            let num_slot_tracks = self.shared_info.animations[current_animation_info.current_animation_id].slot_animation_tracks.len();
+            for i in 0..num_slot_tracks {
+                let (slot_id, current_frame) = {
+                    let track = &self.shared_info.animations[current_animation_info.current_animation_id].slot_animation_tracks[i];
+                    (
+                        track.slot_id,
+                        track.regions.iter().find(|&it| {
+                            it.start_tick <= current_animation_info.current_animation_ticks &&
+                                it.end_tick >= current_animation_info.current_animation_ticks
+                        })
+                    )
+                };
+                if let Some(current_frame) = current_frame {
+                    if current_frame.display_id + self.slots[slot_id].drawable_indices.start < self.slots[slot_id].drawable_indices.end {
+                        self.slots[slot_id].display_id = current_frame.display_id;
+                    }
+                }
+            }
+        }
+
         let num_rotation_tracks = self.shared_info.animations[current_animation_info.current_animation_id].rotation_tracks.len();
         let num_transition_tracks = self.shared_info.animations[current_animation_info.current_animation_id].transition_tracks.len();
         let num_scaling_tracks = self.shared_info.animations[current_animation_info.current_animation_id].scaling_tracks.len();
@@ -1196,8 +1310,8 @@ impl RuntimeArmature {
                         let upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
                         (0.0, upper_rotation)
                     } else {
-                        let k2: f32 = l1 * l1 - l2 * l2;
                         let k1 = delta.magnitude();
+                        let k2: f32 = l1 * l1 - l2 * l2;
 
                         let d = (k1 * k1 - k2) / (2.0 * k1);
                         let a = (d / l2).acos();
@@ -1290,10 +1404,18 @@ impl RuntimeArmature {
         }
     }
 
+    pub fn set_slot_display_id(&mut self, slot_name: &str, id: usize) {
+        let idx = self.shared_info.slot_lookup.get(slot_name).map(|it| *it);
+        if let Some(idx) = idx {
+            if id < self.slots[idx].drawable_indices.end - self.slots[idx].drawable_indices.start {
+                self.slots[idx].display_id = id;
+            }
+        }
+    }
+
     pub fn draw(
-        &mut self,
-        draw_batch:
-        &mut BufferedDrawBatcher,
+        &self,
+        runtime: &mut DragonBonesRuntime,
         position_x: f32,
         position_y: f32,
         scale: f32,
@@ -1303,10 +1425,22 @@ impl RuntimeArmature {
             DrawFlip::None => false,
             DrawFlip::Flipped => true
         };
-        self.drawables.sort_by(|lhs, rhs| lhs.get_draw_order().cmp(&rhs.get_draw_order()));
-        for drawable in self.drawables.iter() {
-            drawable.draw(
-                draw_batch,
+        runtime.render_queue.clear();
+        for slot in self.slots.iter() {
+            if slot.drawable_indices.is_empty() { continue; }
+            let id = slot.drawable_indices.start + slot.display_id;
+            if id >= slot.drawable_indices.end {
+                continue;
+            }
+            runtime.render_queue.push(RenderQueueEntry {
+                draw_order: slot.draw_order,
+                drawable_id: id
+            });
+        }
+        runtime.render_queue.sort();
+        for &entry in runtime.render_queue.iter() {
+            self.drawables[entry.drawable_id].draw(
+                &mut runtime.batcher,
                 &self.pose_matrices,
                 &self.diff_matrices,
                 position_x,
@@ -1641,6 +1775,19 @@ pub struct AnimationTrack<T: Sample> {
 }
 
 #[derive(Debug)]
+pub struct SlotDisplayIdRegion {
+    pub display_id: usize,
+    pub start_tick: usize,
+    pub end_tick: usize
+}
+
+#[derive(Debug)]
+pub struct SlotAnimationTrack {
+    pub slot_id: usize,
+    pub regions: Vec<SlotDisplayIdRegion>
+}
+
+#[derive(Debug)]
 pub struct AnimationData {
     pub name: String,
     pub duration_in_ticks: usize,
@@ -1648,6 +1795,7 @@ pub struct AnimationData {
     pub rotation_tracks: Vec<AnimationTrack<RotationSample>>,
     pub transition_tracks: Vec<AnimationTrack<TransitionSample>>,
     pub scaling_tracks: Vec<AnimationTrack<ScalingSample>>,
+    pub slot_animation_tracks: Vec<SlotAnimationTrack>,
 }
 
 pub struct DragonBonesData {
@@ -1912,6 +2060,7 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
                             raw_bytes[stride + i] = raw_bytes[prev_stride + i];
                             raw_bytes[stride + i + 1] = raw_bytes[prev_stride + i + 1];
                             raw_bytes[stride + i + 2] = raw_bytes[prev_stride + i + 2];
+                            continue;
                         }
                     }
                     if j < (img_height - 1) as usize {
@@ -1923,6 +2072,7 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
                             raw_bytes[stride + i] = raw_bytes[next_stride + i];
                             raw_bytes[stride + i + 1] = raw_bytes[next_stride + i + 1];
                             raw_bytes[stride + i + 2] = raw_bytes[next_stride + i + 2];
+                            continue;
                         }
                     }
                     if i > 0 && (raw_bytes[stride + i - 1] != 0 ||
@@ -1932,6 +2082,7 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
                         raw_bytes[stride + i] = raw_bytes[stride + i - 4];
                         raw_bytes[stride + i + 1] = raw_bytes[stride + i - 3];
                         raw_bytes[stride + i + 2] = raw_bytes[stride + i - 2];
+                        continue;
                     }
                     if i < 4 * (img_width as usize) - 4 && (raw_bytes[stride + i + 4] != 0 ||
                         raw_bytes[stride + i + 5] != 0 ||
@@ -1940,6 +2091,7 @@ fn load_texture(ctx: &mut Context, texture_bytes: &[u8]) -> macroquad::texture::
                         raw_bytes[stride + i] = raw_bytes[stride + i + 4];
                         raw_bytes[stride + i + 1] = raw_bytes[stride + i + 5];
                         raw_bytes[stride + i + 2] = raw_bytes[stride + i + 6];
+                        continue;
                     }
                 }
             }

@@ -13,7 +13,7 @@ async fn main() {
     let dragon_bones_data = DragonBonesData::load(skeleton_bytes, atlas_bytes, texture_bytes);
     let mut runtime_armature = dragon_bones_data.instantiate_armature("Bicycle").unwrap();
 
-    let mut draw_buffer = BufferedDrawBatcher::new();
+    let mut runtime = DragonBonesRuntime::new();
 
     loop {
         clear_background(Color::new(0.48, 0.46, 0.5, 1.0));
@@ -25,7 +25,7 @@ async fn main() {
 
         runtime_armature.update_animation(get_frame_time());
 
-        runtime_armature.draw(&mut draw_buffer, screen_center_x, screen_center_y, SCALE, DrawFlip::None);
+        runtime_armature.draw(&mut runtime, screen_center_x, screen_center_y, SCALE, DrawFlip::None);
         next_frame().await;
     }
 }

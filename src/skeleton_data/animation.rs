@@ -25,7 +25,7 @@ pub struct RawAnimationData {
     #[serde(rename = "slot")]
     #[serde(default)]
     pub slot_timelines: Vec<RawSlotTimeline>,
-    //we are not support FFD and IK yet
+    //we are not support animation of FFD and IK parameters yet
     #[serde(rename = "bone")]
     #[serde(default)]
     pub bone_timelines: Vec<RawBoneTimeline>
@@ -86,10 +86,15 @@ pub struct RawGeneralFrame {
     #[serde(rename = "tweenRotate")]
     #[serde(default)]
     pub clockwise: u32,
+    #[serde(default)]
     pub event: Vec<super::actions::RawActionData>,
+    #[serde(default)]
     pub sound: Vec<super::actions::RawActionData>,
+    #[serde(default)]
     pub action: Vec<super::actions::RawActionData>,
+    #[serde(default)]
     pub events: Vec<super::actions::RawActionData>,
+    #[serde(default)]
     pub actions: Vec<super::actions::RawActionData>,
 }
 
@@ -108,6 +113,7 @@ pub struct RawZOrderFrame {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawSlotTimeline {
+    pub name: String,
     #[serde(rename = "displayFrame")]
     #[serde(default)]
     pub display_frames: Vec<RawDisplayFrame>,
@@ -121,19 +127,7 @@ pub struct RawDisplayFrame {
     #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
-    pub curve: Vec<f32>,
-    #[serde(default = "default_no_easing")]
-    pub tween_easing: f32,
-    #[serde(default)]
-    pub value: u32,
-    #[serde(rename = "displayIndex")]
-    #[serde(default)]
-    pub display_index: u32,
-    pub event: Vec<super::actions::RawActionData>,
-    pub sound: Vec<super::actions::RawActionData>,
-    pub action: Vec<super::actions::RawActionData>,
-    pub events: Vec<super::actions::RawActionData>,
-    pub actions: Vec<super::actions::RawActionData>,
+    pub value: u32
 }
 
 #[derive(Clone, Deserialize, Debug)]

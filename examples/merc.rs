@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use parse_dragon_bones_json::runtime::*;
 use macroquad::miniquad::KeyCode;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{VecDeque};
 use serde::Deserialize;
 use ron::de::from_reader;
 
@@ -79,7 +79,7 @@ async fn main() {
     let mut player_x = screen_width() / 2.0;
     let mut player_y = screen_height() / 2.0;
 
-    let mut draw_buffer = BufferedDrawBatcher::new();
+    let mut dragon_bones_runtime = DragonBonesRuntime::new();
 
     let mut last_shot = 0.0;
     const FIRE_RATE: f32 = 0.15;
@@ -119,7 +119,7 @@ async fn main() {
             false
         };
 
-        if on_ground && is_key_pressed(KeyCode::Space) {
+        if on_ground && is_key_down(KeyCode::Space) {
             vertical_speed -= JUMP_FORCE;
             on_ground = false;
         }
@@ -153,6 +153,14 @@ async fn main() {
         }
 
         animation_state_machine.actualize(&mut mercenary_armature);
+
+        if is_key_pressed(KeyCode::Key1) {
+            mercenary_armature.set_slot_display_id("Gun1", 0);
+        }
+
+        if is_key_pressed(KeyCode::Key2) {
+            mercenary_armature.set_slot_display_id("Gun1", 1);
+        }
 
         if is_mouse_button_down(MouseButton::Left) && (get_time() as f32 - last_shot) > FIRE_RATE {
             last_shot = get_time() as f32;
@@ -214,12 +222,12 @@ async fn main() {
             bones.set_bone_world_rotation(gun_bone_id, theta);
             bones.set_bone_world_rotation(head_bone_id, theta - 90.0_f32.to_radians())
         });
-        mercenary_armature.draw(&mut draw_buffer, player_x, player_y, SCALE, x_flip);
+        mercenary_armature.draw(&mut dragon_bones_runtime, player_x, player_y, SCALE, x_flip);
 
         crosshair_armature.update_animation_ex(dt, |bones| {
             bones.set_bone_world_rotation(crosshair_bone_id, -get_time() as f32);
         });
-        crosshair_armature.draw(&mut draw_buffer, mouse_x, mouse_y, SCALE * 2.0, DrawFlip::None);
+        crosshair_armature.draw(&mut dragon_bones_runtime, mouse_x, mouse_y, SCALE * 2.0, DrawFlip::None);
 
         for i in (0..bullets.len()).rev() {
             if bullet_arena[bullets[i]].lifetime <= 0.0 {
@@ -239,7 +247,7 @@ async fn main() {
             });
 
             bullet_arena[bullets[i]].armature.draw(
-                &mut draw_buffer,
+                &mut dragon_bones_runtime,
                 pos_x, pos_y,
                 SCALE,
                 DrawFlip::None,
