@@ -2,7 +2,7 @@ use macroquad::prelude::*;
 use parse_dragon_bones_json::runtime::*;
 use macroquad::miniquad::KeyCode;
 
-#[macroquad::main("draw skeleton")]
+#[macroquad::main("rooster")]
 async fn main() {
     let texture_bytes = include_bytes!("../src/test_assets/rooster_tex.png");
     let atlas_bytes = include_bytes!("../src/test_assets/rooster_tex.json");

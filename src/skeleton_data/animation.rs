@@ -127,7 +127,7 @@ pub struct RawDisplayFrame {
     #[serde(default = "default_one_frame")]
     pub duration: u32,
     #[serde(default)]
-    pub value: u32
+    pub value: i32
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -138,6 +138,8 @@ pub struct RawColorFrame {
     pub curve: Vec<f32>,
     #[serde(default = "default_no_easing")]
     pub tween_easing: f32,
+    #[serde(rename = "value")]
+    #[serde(default)]
     pub color: ColorTransform
 }
 

@@ -155,11 +155,11 @@ async fn main() {
         animation_state_machine.actualize(&mut mercenary_armature);
 
         if is_key_pressed(KeyCode::Key1) {
-            mercenary_armature.set_slot_display_id("Gun1", 0);
+            mercenary_armature.set_slot_display_id("Gun1", Some(0));
         }
 
         if is_key_pressed(KeyCode::Key2) {
-            mercenary_armature.set_slot_display_id("Gun1", 1);
+            mercenary_armature.set_slot_display_id("Gun1", Some(1));
         }
 
         if is_mouse_button_down(MouseButton::Left) && (get_time() as f32 - last_shot) > FIRE_RATE {
