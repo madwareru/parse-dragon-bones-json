@@ -21,7 +21,7 @@ pub struct RawAnimationData {
     pub general_timeline: Vec<RawGeneralFrame>,
     #[serde(rename = "zOrder")]
     #[serde(default)]
-    pub z_order_timeline: Vec<RawZOrderFrame>,
+    pub z_order_timeline: RawZOrderTimeline,
     #[serde(rename = "slot")]
     #[serde(default)]
     pub slot_timelines: Vec<RawSlotTimeline>,
@@ -98,14 +98,17 @@ pub struct RawGeneralFrame {
     pub actions: Vec<super::actions::RawActionData>,
 }
 
+#[derive(Clone, Deserialize, Debug, Default)]
+pub struct RawZOrderTimeline {
+    #[serde(rename = "frame")]
+    #[serde(default)]
+    pub frames: Vec<RawZOrderFrame>
+}
+
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawZOrderFrame {
     #[serde(default = "default_one_frame")]
     pub duration: u32,
-    #[serde(default)]
-    pub curve: Vec<f32>,
-    #[serde(default = "default_no_easing")]
-    pub tween_easing: f32,
     #[serde(rename = "zOrder")]
     #[serde(default)]
     pub z_order: Vec<i32>,
