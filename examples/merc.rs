@@ -231,6 +231,20 @@ async fn main() {
             bones.set_bone_world_rotation(gun_bone_id, theta);
             bones.set_bone_world_rotation(head_bone_id, theta - 90.0_f32.to_radians())
         });
+        while let Some(event) = mercenary_armature.poll_next_event() {
+            match event {
+                DragonBonesEvent::GotoAndPlay { animation_name } => {
+                    println!("there is a Goto And Play event: {}", &animation_name)
+                },
+                DragonBonesEvent::PlaySound { sound_name } => {
+                    println!("there is a Play Sound event: {}", &sound_name)
+                },
+                DragonBonesEvent::Custom { .. } => {
+                    println!("there is a custom event: {:?}", &event)
+                }
+            }
+        }
+
         mercenary_armature.draw(&mut dragon_bones_runtime, player_x, player_y, SCALE, x_flip);
 
         for i in (0..bullets.len()).rev() {

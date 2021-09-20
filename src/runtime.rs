@@ -39,7 +39,7 @@ const COLORS: &[Color] = &[
 #[derive(Copy, Clone)]
 pub enum DrawFlip {
     None,
-    Flipped
+    Flipped,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -49,6 +49,7 @@ struct RenderQueueEntry {
     implicit_draw_order: usize,
     explicit_draw_order: i32,
 }
+
 impl PartialOrd for RenderQueueEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.explicit_draw_order != other.explicit_draw_order {
@@ -58,7 +59,9 @@ impl PartialOrd for RenderQueueEntry {
         }
     }
 }
-impl Eq for RenderQueueEntry { }
+
+impl Eq for RenderQueueEntry {}
+
 impl Ord for RenderQueueEntry {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.explicit_draw_order != other.explicit_draw_order {
@@ -71,13 +74,14 @@ impl Ord for RenderQueueEntry {
 
 pub struct DragonBonesRuntime {
     batcher: BufferedDrawBatcher,
-    render_queue: Vec<RenderQueueEntry>
+    render_queue: Vec<RenderQueueEntry>,
 }
+
 impl DragonBonesRuntime {
     pub fn new() -> Self {
         Self {
             batcher: BufferedDrawBatcher::new(),
-            render_queue: Vec::new()
+            render_queue: Vec::new(),
         }
     }
 }
@@ -127,18 +131,21 @@ pub trait Drawable {
         position_x: f32,
         position_y: f32,
         scale: f32,
-        x_flipped: bool
+        x_flipped: bool,
     );
     fn instantiate(&self) -> Box<dyn Drawable>;
 }
 
 #[derive(Copy, Clone)]
-pub struct BBoxDrawable { // just a stub. Maybe some day we will render it, but not now
-    _nop: u8
+pub struct BBoxDrawable {
+    // just a stub. Maybe some day we will render it, but not now
+    _nop: u8,
 }
+
 impl BBoxDrawable {
-    pub fn new() -> Self { Self{ _nop: 0 } }
+    pub fn new() -> Self { Self { _nop: 0 } }
 }
+
 impl Drawable for BBoxDrawable {
     fn draw(
         &self,
@@ -149,10 +156,10 @@ impl Drawable for BBoxDrawable {
         _position_x: f32,
         _position_y: f32,
         _scale: f32,
-        _x_flipped: bool
+        _x_flipped: bool,
     ) {}
     fn instantiate(&self) -> Box<dyn Drawable> {
-        Box::new(Self{ _nop: 0 })
+        Box::new(Self { _nop: 0 })
     }
 }
 
@@ -161,7 +168,7 @@ pub struct MeshDrawable {
     mesh_data: Arc<PurifiedMeshData<u16>>,
     texture: Texture2D,
     atlas_size: [f32; 2],
-    atlas_sub_texture: SubTexture
+    atlas_sub_texture: SubTexture,
 }
 
 impl MeshDrawable {
@@ -169,13 +176,13 @@ impl MeshDrawable {
         mesh_data: &PurifiedMeshData<u16>,
         texture: Texture2D,
         atlas_size: [f32; 2],
-        atlas_sub_texture: SubTexture
+        atlas_sub_texture: SubTexture,
     ) -> Self {
         Self {
             mesh_data: Arc::new(mesh_data.clone()),
             texture,
             atlas_size,
-            atlas_sub_texture
+            atlas_sub_texture,
         }
     }
 }
@@ -190,9 +197,9 @@ impl Drawable for MeshDrawable {
         position_x: f32,
         position_y: f32,
         scale: f32,
-        flipped: bool
+        flipped: bool,
     ) {
-        let x_scale = if flipped { -scale} else { scale };
+        let x_scale = if flipped { -scale } else { scale };
         let verts =
             buffer(&self.mesh_data.vertices, 2)
                 .zip(buffer(&self.mesh_data.uvs, 2))
@@ -216,7 +223,7 @@ impl Drawable for MeshDrawable {
                             + uv[0] * self.atlas_sub_texture.rect.width / self.atlas_size[0],
                         self.atlas_sub_texture.rect.y / self.atlas_size[1]
                             + uv[1] * self.atlas_sub_texture.rect.height / self.atlas_size[1],
-                        tint
+                        tint,
                     )
                 });
 
@@ -233,7 +240,7 @@ impl Drawable for MeshDrawable {
             mesh_data,
             texture,
             atlas_size,
-            atlas_sub_texture
+            atlas_sub_texture,
         })
     }
 }
@@ -256,7 +263,7 @@ impl ImageDrawable {
         atlas_sub_texture: SubTexture,
         parent_bone_id: usize,
         transform: RawTransform,
-        pivot: crate::shared_types::Point
+        pivot: crate::shared_types::Point,
     ) -> Self {
         let left = -pivot.x * atlas_sub_texture.frame_rect.width;
         let top = -pivot.y * atlas_sub_texture.frame_rect.height;
@@ -329,7 +336,7 @@ impl ImageDrawable {
             parent_bone_id,
             transform: transform.into(),
             vertices,
-            uvs
+            uvs,
         }
     }
 }
@@ -344,9 +351,9 @@ impl Drawable for ImageDrawable {
         position_x: f32,
         position_y: f32,
         scale: f32,
-        flipped: bool
+        flipped: bool,
     ) {
-        let x_scale = if flipped { -scale} else { scale };
+        let x_scale = if flipped { -scale } else { scale };
         let transition_local: nalgebra::Matrix3<f32> =
             nalgebra::Translation2::new(self.transform.x, self.transform.y).into();
         let rotation_matrix: nalgebra::Matrix3<f32> =
@@ -370,7 +377,7 @@ impl Drawable for ImageDrawable {
                         0.0,
                         uv.0,
                         uv.1,
-                        tint
+                        tint,
                     )
                 });
         draw_batcher.renderize_next_triangles(verts, indices, Some(self.texture));
@@ -387,7 +394,7 @@ impl Drawable for ImageDrawable {
             parent_bone_id: self.parent_bone_id,
             transform: self.transform,
             vertices: self.vertices.clone(),
-            uvs: self.uvs
+            uvs: self.uvs,
         })
     }
 }
@@ -447,7 +454,7 @@ struct BoneInfo {
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Tick {
     Current,
-    FadeOut
+    FadeOut,
 }
 
 #[derive(Clone)]
@@ -468,20 +475,20 @@ struct AnimationInfo {
     ticked_time: f32,
     bones: Vec<NamelessBone>,
     current_animation_id: usize,
-    current_animation_ticks: usize
+    current_animation_ticks: usize,
 }
 
 #[derive(Copy, Clone)]
 struct FadeOutInfo {
     duration_in_frames: usize,
-    current_frame: usize
+    current_frame: usize,
 }
 
 #[derive(Copy, Clone)]
 pub struct AdditiveAnimationInfo {
     ticked_time: f32,
     animation_id: usize,
-    animation_ticks: usize
+    animation_ticks: usize,
 }
 
 #[derive(Clone)]
@@ -510,8 +517,12 @@ pub struct RuntimeArmature {
     diff_matrices: Vec<nalgebra::Matrix3<f32>>,
 
     slots: Vec<SlotInfo>,
+
     drawables: Vec<Box<dyn Drawable>>,
-    buffer_deque: VecDeque<indextree::NodeId>
+    buffer_deque: VecDeque<indextree::NodeId>,
+
+    next_event_frames: Vec<usize>,
+    event_queue: VecDeque<DragonBonesEvent>,
 }
 
 impl RuntimeArmature {
@@ -524,7 +535,7 @@ impl RuntimeArmature {
     pub fn get_bone_world_orientation(
         &self,
         bone_id: usize,
-        x_flip: DrawFlip
+        x_flip: DrawFlip,
     ) -> (f32, f32) {
         let x_scale = match x_flip {
             DrawFlip::None => 1.0,
@@ -548,7 +559,7 @@ impl RuntimeArmature {
         position_x: f32,
         position_y: f32,
         scale: f32,
-        x_flip: DrawFlip
+        x_flip: DrawFlip,
     ) -> (f32, f32) {
         let x_scale = match x_flip {
             DrawFlip::None => scale,
@@ -559,6 +570,12 @@ impl RuntimeArmature {
             position_x + origin.x * x_scale,
             position_y + origin.y * scale
         )
+    }
+
+    const MAX_EVENT_QUEUE_SIZE: usize = 128;
+
+    pub fn poll_next_event(&mut self) -> Option<DragonBonesEvent> {
+        self.event_queue.pop_front()
     }
 
     pub fn instantiate(&self) -> Self {
@@ -580,6 +597,8 @@ impl RuntimeArmature {
             bone_tree: self.bone_tree.clone(),
             tree_handles: self.tree_handles.clone(),
             buffer_deque: VecDeque::new(),
+            next_event_frames: self.next_event_frames.clone(),
+            event_queue: VecDeque::new(),
         }
     }
 
@@ -628,7 +647,7 @@ impl RuntimeArmature {
                         tint_b: slots[i].color_transform.blue_multiplier,
                         draw_order: 0,
                         display_id,
-                        drawable_indices: std::ops::Range::default()
+                        drawable_indices: std::ops::Range::default(),
                     });
                 }
                 for skin in skins.iter() {
@@ -656,7 +675,7 @@ impl RuntimeArmature {
                                         &mesh,
                                         texture,
                                         [atlas.width as f32, atlas.height as f32],
-                                        sub_texture.unwrap()
+                                        sub_texture.unwrap(),
                                     )
                                 ));
                                 continue;
@@ -669,7 +688,7 @@ impl RuntimeArmature {
                                         sub_texture.unwrap(),
                                         parent_bone_id.unwrap(),
                                         transform,
-                                        pivot
+                                        pivot,
                                     )
                                 ));
                                 continue;
@@ -757,14 +776,15 @@ impl RuntimeArmature {
                         scaling_tracks: Vec::new(),
                         display_id_animation_tracks: Vec::new(),
                         color_tint_animation_tracks: Vec::new(),
-                        draw_order_animation_track: DrawOrderAnimationTrack { regions: Vec::new() }
+                        draw_order_animation_track: DrawOrderAnimationTrack { regions: Vec::new() },
+                        events_animation_track: EventsAnimationTrack { regions: Vec::new() },
                     };
                     for slot_timeline in anim.slot_timelines.iter() {
                         let slot_id = *slot_lookup.get(&slot_timeline.name).unwrap();
                         if slot_timeline.display_frames.len() > 0 {
                             let mut animation_track = DisplayIdAnimationTrack {
                                 slot_id,
-                                regions: Vec::new()
+                                regions: Vec::new(),
                             };
                             let mut tick_now: usize = 0;
                             for frame_timeline in slot_timeline.display_frames.iter() {
@@ -775,7 +795,7 @@ impl RuntimeArmature {
                                         None
                                     },
                                     start_tick: tick_now,
-                                    end_tick: tick_now + frame_timeline.duration as usize
+                                    end_tick: tick_now + frame_timeline.duration as usize,
                                 });
                                 tick_now += frame_timeline.duration as usize;
                             }
@@ -784,20 +804,20 @@ impl RuntimeArmature {
                         if slot_timeline.colors.len() > 0 {
                             let mut animation_track = ColorTintAnimationTrack {
                                 slot_id,
-                                regions: Vec::new()
+                                regions: Vec::new(),
                             };
                             let mut tick_now: usize = 0;
                             if slot_timeline.colors.len() == 1 {
                                 let frame = &slot_timeline.colors[0];
                                 animation_track.regions.push(
                                     SamplingRegion {
-                                        start_sample: TintSample{
+                                        start_sample: TintSample {
                                             a: frame.color.alpha_multiplier,
                                             r: frame.color.red_multiplier,
                                             g: frame.color.green_multiplier,
                                             b: frame.color.blue_multiplier,
                                         },
-                                        end_sample: TintSample{
+                                        end_sample: TintSample {
                                             a: frame.color.alpha_multiplier,
                                             r: frame.color.red_multiplier,
                                             g: frame.color.green_multiplier,
@@ -808,23 +828,23 @@ impl RuntimeArmature {
                                         tween_easing: TweenEasing::parse(
                                             &mut bezier_buffer,
                                             frame.tween_easing,
-                                            &frame.curve
-                                        )
+                                            &frame.curve,
+                                        ),
                                     }
                                 );
                             } else {
-                                for i in 0..slot_timeline.colors.len()-1 {
+                                for i in 0..slot_timeline.colors.len() - 1 {
                                     let frame = &slot_timeline.colors[i];
-                                    let next_frame = &slot_timeline.colors[i+1];
+                                    let next_frame = &slot_timeline.colors[i + 1];
                                     animation_track.regions.push(
                                         SamplingRegion {
-                                            start_sample: TintSample{
+                                            start_sample: TintSample {
                                                 a: frame.color.alpha_multiplier,
                                                 r: frame.color.red_multiplier,
                                                 g: frame.color.green_multiplier,
                                                 b: frame.color.blue_multiplier,
                                             },
-                                            end_sample: TintSample{
+                                            end_sample: TintSample {
                                                 a: next_frame.color.alpha_multiplier,
                                                 r: next_frame.color.red_multiplier,
                                                 g: next_frame.color.green_multiplier,
@@ -835,8 +855,8 @@ impl RuntimeArmature {
                                             tween_easing: TweenEasing::parse(
                                                 &mut bezier_buffer,
                                                 frame.tween_easing,
-                                                &frame.curve
-                                            )
+                                                &frame.curve,
+                                            ),
                                         }
                                     );
                                     tick_now += slot_timeline.colors[i].duration as usize;
@@ -853,7 +873,7 @@ impl RuntimeArmature {
                                 entries.push(
                                     DrawOrderEntry {
                                         slot_id: draw_order_frame.z_order[offset] as usize,
-                                        draw_order: draw_order_frame.z_order[offset + 1]
+                                        draw_order: draw_order_frame.z_order[offset + 1],
                                     }
                                 )
                             }
@@ -861,10 +881,55 @@ impl RuntimeArmature {
                                 DrawOrderRegion {
                                     entries,
                                     start_tick: tick_now,
-                                    end_tick: tick_now + draw_order_frame.duration as usize
+                                    end_tick: tick_now + draw_order_frame.duration as usize,
                                 }
                             );
                             tick_now += draw_order_frame.duration as usize;
+                        }
+
+                        tick_now = 0;
+                        for event_frame in anim.general_timeline.iter() {
+                            let mut entry = DragonBonesEventsEntry { events: Vec::new() };
+                            if !event_frame.goto_and_play_action.is_empty() {
+                                entry.events.push(DragonBonesEvent::GotoAndPlay {
+                                    animation_name: Arc::new(event_frame.goto_and_play_action.clone())
+                                });
+                            }
+                            if !event_frame.sound.is_empty() {
+                                entry.events.push(DragonBonesEvent::PlaySound {
+                                    sound_name: Arc::new(event_frame.sound.clone())
+                                });
+                            }
+                            for idx in 0..event_frame.events.len() {
+                                let event = DragonBonesEvent::Custom {
+                                    event_name: Arc::new(event_frame.events[idx].name.clone()),
+                                    user_int: if event_frame.events[idx].user_ints.len() == 1 {
+                                        Some(event_frame.events[idx].user_ints[0])
+                                    } else {
+                                        None
+                                    },
+                                    user_float: if event_frame.events[idx].user_floats.len() == 1 {
+                                        Some(event_frame.events[idx].user_floats[0])
+                                    } else {
+                                        None
+                                    },
+                                    user_string: if event_frame.events[idx].user_strings.len() == 1 {
+                                        Some(Arc::new(event_frame.events[idx].user_strings[0].clone()))
+                                    } else {
+                                        None
+                                    },
+                                };
+                                entry.events.push(event);
+                            }
+
+                            animation_data.events_animation_track.regions.push(
+                                DragonBonesEventsRegion {
+                                    entry,
+                                    start_tick: tick_now,
+                                    end_tick: tick_now + event_frame.duration as usize,
+                                }
+                            );
+                            tick_now += event_frame.duration as usize;
                         }
                     }
                     for bone_timeline in anim.bone_timelines.iter() {
@@ -876,7 +941,7 @@ impl RuntimeArmature {
                                 let mut tick_now: usize = 0;
                                 let mut animation_track = AnimationTrack {
                                     bone_id,
-                                    regions: Vec::new()
+                                    regions: Vec::new(),
                                 };
                                 if bone_timeline.rotation_frames.len() == 1 {
                                     let frame = &bone_timeline.rotation_frames[0];
@@ -885,21 +950,21 @@ impl RuntimeArmature {
                                         * if frame.clockwise == 1 { -1.0 } else { 1.0 };
                                     animation_track.regions.push(
                                         SamplingRegion {
-                                            start_sample: RotationSample{ theta: rotation },
-                                            end_sample: RotationSample{ theta: rotation },
+                                            start_sample: RotationSample { theta: rotation },
+                                            end_sample: RotationSample { theta: rotation },
                                             start_tick: tick_now,
                                             end_tick: tick_now + frame.duration as usize,
                                             tween_easing: TweenEasing::parse(
                                                 &mut bezier_buffer,
                                                 frame.tween_easing,
-                                                &frame.curve
-                                            )
+                                                &frame.curve,
+                                            ),
                                         }
                                     );
                                 } else {
-                                    for i in 0..bone_timeline.rotation_frames.len()-1 {
+                                    for i in 0..bone_timeline.rotation_frames.len() - 1 {
                                         let frame = &bone_timeline.rotation_frames[i];
-                                        let next_frame = &bone_timeline.rotation_frames[i+1];
+                                        let next_frame = &bone_timeline.rotation_frames[i + 1];
                                         let rotation = bone_vec[bone_id].transform.rotation
                                             + frame.rotate.to_radians()
                                             * if frame.clockwise == 1 { -1.0 } else { 1.0 };
@@ -909,15 +974,15 @@ impl RuntimeArmature {
 
                                         animation_track.regions.push(
                                             SamplingRegion {
-                                                start_sample: RotationSample{ theta: rotation },
-                                                end_sample: RotationSample{ theta: next_rotation },
+                                                start_sample: RotationSample { theta: rotation },
+                                                end_sample: RotationSample { theta: next_rotation },
                                                 start_tick: tick_now,
                                                 end_tick: tick_now + frame.duration as usize,
                                                 tween_easing: TweenEasing::parse(
                                                     &mut bezier_buffer,
                                                     frame.tween_easing,
-                                                    &frame.curve
-                                                )
+                                                    &frame.curve,
+                                                ),
                                             }
                                         );
                                         tick_now += bone_timeline.rotation_frames[i].duration as usize;
@@ -929,7 +994,7 @@ impl RuntimeArmature {
                                 let mut tick_now: usize = 0;
                                 let mut animation_track = AnimationTrack {
                                     bone_id,
-                                    regions: Vec::new()
+                                    regions: Vec::new(),
                                 };
                                 if bone_timeline.translate_frames.len() == 1 {
                                     let frame = &bone_timeline.translate_frames[0];
@@ -937,27 +1002,27 @@ impl RuntimeArmature {
                                     let translation_y = bone_vec[bone_id].transform.y + frame.y;
                                     animation_track.regions.push(
                                         SamplingRegion {
-                                            start_sample: TransitionSample{
+                                            start_sample: TransitionSample {
                                                 x: translation_x,
-                                                y: translation_y
+                                                y: translation_y,
                                             },
-                                            end_sample: TransitionSample{
+                                            end_sample: TransitionSample {
                                                 x: translation_x,
-                                                y: translation_y
+                                                y: translation_y,
                                             },
                                             start_tick: tick_now,
                                             end_tick: tick_now + frame.duration as usize,
                                             tween_easing: TweenEasing::parse(
                                                 &mut bezier_buffer,
                                                 frame.tween_easing,
-                                                &frame.curve
-                                            )
+                                                &frame.curve,
+                                            ),
                                         }
                                     );
                                 } else {
-                                    for i in 0..bone_timeline.translate_frames.len()-1 {
+                                    for i in 0..bone_timeline.translate_frames.len() - 1 {
                                         let frame = &bone_timeline.translate_frames[i];
-                                        let next_frame = &bone_timeline.translate_frames[i+1];
+                                        let next_frame = &bone_timeline.translate_frames[i + 1];
 
                                         let translation_x = bone_vec[bone_id].transform.x + frame.x;
                                         let translation_y = bone_vec[bone_id].transform.y + frame.y;
@@ -967,21 +1032,21 @@ impl RuntimeArmature {
 
                                         animation_track.regions.push(
                                             SamplingRegion {
-                                                start_sample: TransitionSample{
+                                                start_sample: TransitionSample {
                                                     x: translation_x,
-                                                    y: translation_y
+                                                    y: translation_y,
                                                 },
-                                                end_sample: TransitionSample{
+                                                end_sample: TransitionSample {
                                                     x: next_translation_x,
-                                                    y: next_translation_y
+                                                    y: next_translation_y,
                                                 },
                                                 start_tick: tick_now,
                                                 end_tick: tick_now + frame.duration as usize,
                                                 tween_easing: TweenEasing::parse(
                                                     &mut bezier_buffer,
                                                     frame.tween_easing,
-                                                    &frame.curve
-                                                )
+                                                    &frame.curve,
+                                                ),
                                             }
                                         );
                                         tick_now += bone_timeline.translate_frames[i].duration as usize;
@@ -993,7 +1058,7 @@ impl RuntimeArmature {
                                 let mut tick_now: usize = 0;
                                 let mut animation_track = AnimationTrack {
                                     bone_id,
-                                    regions: Vec::new()
+                                    regions: Vec::new(),
                                 };
                                 if bone_timeline.scale_frames.len() == 1 {
                                     let frame = &bone_timeline.scale_frames[0];
@@ -1001,27 +1066,27 @@ impl RuntimeArmature {
                                     let scale_y = frame.y;
                                     animation_track.regions.push(
                                         SamplingRegion {
-                                            start_sample: ScalingSample{
+                                            start_sample: ScalingSample {
                                                 scale_x,
-                                                scale_y
+                                                scale_y,
                                             },
-                                            end_sample: ScalingSample{
+                                            end_sample: ScalingSample {
                                                 scale_x,
-                                                scale_y
+                                                scale_y,
                                             },
                                             start_tick: tick_now,
                                             end_tick: tick_now + frame.duration as usize,
                                             tween_easing: TweenEasing::parse(
                                                 &mut bezier_buffer,
                                                 frame.tween_easing,
-                                                &frame.curve
-                                            )
+                                                &frame.curve,
+                                            ),
                                         }
                                     );
                                 } else {
-                                    for i in 0..bone_timeline.scale_frames.len()-1 {
+                                    for i in 0..bone_timeline.scale_frames.len() - 1 {
                                         let frame = &bone_timeline.scale_frames[i];
-                                        let next_frame = &bone_timeline.scale_frames[i+1];
+                                        let next_frame = &bone_timeline.scale_frames[i + 1];
 
                                         let scale_x = frame.x;
                                         let scale_y = frame.y;
@@ -1031,21 +1096,21 @@ impl RuntimeArmature {
 
                                         animation_track.regions.push(
                                             SamplingRegion {
-                                                start_sample: ScalingSample{
+                                                start_sample: ScalingSample {
                                                     scale_x,
-                                                    scale_y
+                                                    scale_y,
                                                 },
-                                                end_sample: ScalingSample{
+                                                end_sample: ScalingSample {
                                                     scale_x: next_scale_x,
-                                                    scale_y: next_scale_y
+                                                    scale_y: next_scale_y,
                                                 },
                                                 start_tick: tick_now,
                                                 end_tick: tick_now + frame.duration as usize,
                                                 tween_easing: TweenEasing::parse(
                                                     &mut bezier_buffer,
                                                     frame.tween_easing,
-                                                    &frame.curve
-                                                )
+                                                    &frame.curve,
+                                                ),
                                             }
                                         );
                                         tick_now += bone_timeline.scale_frames[i].duration as usize;
@@ -1070,9 +1135,10 @@ impl RuntimeArmature {
                     ticked_time: 0.0,
                     bones: bone_vec.clone(),
                     current_animation_id: start_animation_id,
-                    current_animation_ticks: 0
+                    current_animation_ticks: 0,
                 };
 
+                let mut next_event_frames = vec![0; animations.len()];
                 (
                     name.clone(),
                     Self {
@@ -1085,7 +1151,7 @@ impl RuntimeArmature {
                             slot_lookup: Arc::new(slot_lookup),
                             animations: Arc::new(animations_vec),
                             start_animation_id,
-                            ik
+                            ik,
                         },
                         fade_out_animation_info: animation_info.clone(),
                         current_animation_info: animation_info,
@@ -1098,7 +1164,9 @@ impl RuntimeArmature {
                         diff_matrices,
                         bone_tree,
                         tree_handles,
-                        buffer_deque: VecDeque::new()
+                        buffer_deque: VecDeque::new(),
+                        next_event_frames,
+                        event_queue: VecDeque::new(),
                     }
                 )
             }
@@ -1114,7 +1182,7 @@ impl RuntimeArmature {
                 AdditiveAnimationInfo {
                     ticked_time: 0.0,
                     animation_id,
-                    animation_ticks: 0
+                    animation_ticks: 0,
                 }
             )
         }
@@ -1137,6 +1205,7 @@ impl RuntimeArmature {
             for i in 0..self.slots.len() {
                 self.slots[i] = self.shared_info.initial_slot_info[i].clone();
             }
+            self.next_event_frames.fill(0);
         }
     }
 
@@ -1158,7 +1227,7 @@ impl RuntimeArmature {
                     }
                 }
                 None
-            },
+            }
             Some(fade_out) => {
                 if fade_out.current_frame >= fade_out.duration_in_frames {
                     {
@@ -1187,31 +1256,31 @@ impl RuntimeArmature {
                             bones_mut[i].transform.rotation = TweenEasing::Linear.interpolate(
                                 bone_fade.transform.rotation,
                                 bone.transform.rotation,
-                                current_delta
+                                current_delta,
                             );
                             bones_mut[i].transform.x = TweenEasing::Linear.interpolate(
                                 bone_fade.transform.x,
                                 bone.transform.x,
-                                current_delta
+                                current_delta,
                             );
                             bones_mut[i].transform.y = TweenEasing::Linear.interpolate(
                                 bone_fade.transform.y,
                                 bone.transform.y,
-                                current_delta
+                                current_delta,
                             );
                             bones_mut[i].transform.scale_x = TweenEasing::Linear.interpolate(
                                 bone_fade.transform.scale_x,
                                 bone.transform.scale_x,
-                                current_delta
+                                current_delta,
                             );
                             bones_mut[i].transform.scale_y = TweenEasing::Linear.interpolate(
                                 bone_fade.transform.scale_y,
                                 bone.transform.scale_y,
-                                current_delta
+                                current_delta,
                             );
                         }
                     }
-                    Some( FadeOutInfo {current_frame: fade_out.current_frame + 1, ..fade_out} )
+                    Some(FadeOutInfo { current_frame: fade_out.current_frame + 1, ..fade_out })
                 }
             }
         };
@@ -1325,32 +1394,12 @@ impl RuntimeArmature {
         if tick_kind == Tick::Current {
             // We don't need to animate slots in fade out, so this works only for current animation info
             // and does a direct modification for slots in armature
-            let num_display_id_tracks = self.shared_info.animations[current_animation_info.current_animation_id].display_id_animation_tracks.len();
             let num_color_tint_tracks = self.shared_info.animations[current_animation_info.current_animation_id].color_tint_animation_tracks.len();
-            let num_draw_order_regions = self.shared_info.animations[current_animation_info.current_animation_id].draw_order_animation_track.regions.len();
 
-            for i in 0..num_display_id_tracks {
-                let (slot_id, current_frame) = {
-                    let track = &self.shared_info.animations[current_animation_info.current_animation_id].display_id_animation_tracks[i];
-                    (
-                        track.slot_id,
-                        track.regions.iter().find(|&it| {
-                            it.start_tick <= current_animation_info.current_animation_ticks &&
-                                it.end_tick >= current_animation_info.current_animation_ticks
-                        })
-                    )
-                };
-                if let Some(current_frame) = current_frame {
-                    match current_frame.display_id {
-                        None => self.slots[slot_id].display_id = None,
-                        Some(id) => {
-                            if id + self.slots[slot_id].drawable_indices.start < self.slots[slot_id].drawable_indices.end {
-                                self.slots[slot_id].display_id = Some(id);
-                            }
-                        }
-                    }
-                }
-            }
+            let num_display_id_tracks = self.shared_info.animations[current_animation_info.current_animation_id].display_id_animation_tracks.len();
+            let num_draw_order_regions = self.shared_info.animations[current_animation_info.current_animation_id].draw_order_animation_track.regions.len();
+            let num_event_regions = self.shared_info.animations[current_animation_info.current_animation_id].events_animation_track.regions.len();
+
             for i in 0..num_color_tint_tracks {
                 let (slot_id, current_frame) = {
                     let track = &self.shared_info.animations[current_animation_info.current_animation_id].color_tint_animation_tracks[i];
@@ -1371,6 +1420,28 @@ impl RuntimeArmature {
                 }
             }
 
+            for i in 0..num_display_id_tracks {
+                let (slot_id, current_frame_info) = {
+                    let track = &self.shared_info.animations[current_animation_info.current_animation_id].display_id_animation_tracks[i];
+                    (
+                        track.slot_id,
+                        track.regions.iter().find(|&it| {
+                            it.start_tick <= current_animation_info.current_animation_ticks &&
+                                it.end_tick >= current_animation_info.current_animation_ticks
+                        })
+                    )
+                };
+                if let Some(current_frame) = current_frame_info {
+                    match current_frame.display_id {
+                        None => self.slots[slot_id].display_id = None,
+                        Some(id) => {
+                            if id + self.slots[slot_id].drawable_indices.start < self.slots[slot_id].drawable_indices.end {
+                                self.slots[slot_id].display_id = Some(id);
+                            }
+                        }
+                    }
+                }
+            }
             if num_draw_order_regions > 0 {
                 let current_frame = {
                     let track = &self.shared_info.animations[current_animation_info.current_animation_id].draw_order_animation_track;
@@ -1389,6 +1460,53 @@ impl RuntimeArmature {
                 }
             }
 
+            if num_event_regions > 0 {
+                let next_event_frame = self.next_event_frames[current_animation_info.current_animation_id];
+                let (is_last, index) = {
+                    let track = &self.shared_info.animations[current_animation_info.current_animation_id].events_animation_track;
+                    if current_animation_info.current_animation_ticks > track.regions[track.regions.len() - 1].end_tick {
+                        (
+                            true,
+                            Some(track.regions.len() - 1)
+                        )
+                    } else {
+                        (
+                            false,
+                            track.regions.iter().enumerate().find(|&(_, it)| {
+                                it.start_tick <= current_animation_info.current_animation_ticks &&
+                                    it.end_tick >= current_animation_info.current_animation_ticks
+                            }).map(|it| it.0)
+                        )
+                    }
+                };
+                if !(next_event_frame == 0 && is_last) {
+                    if let Some(index) = index {
+                        if index >= next_event_frame {
+                            for i in next_event_frame..index + 1 {
+                                let current_frame = &self
+                                    .shared_info
+                                    .animations[current_animation_info.current_animation_id]
+                                    .events_animation_track
+                                    .regions[i];
+
+                                for event in current_frame.entry.events.iter() {
+                                    if self.event_queue.len() == Self::MAX_EVENT_QUEUE_SIZE {
+                                        self.event_queue.pop_front();
+                                    }
+                                    self.event_queue.push_back(event.clone());
+                                }
+                            }
+                            self.next_event_frames[current_animation_info.current_animation_id] =
+                                (index + 1) % self
+                                    .shared_info
+                                    .animations[current_animation_info.current_animation_id]
+                                    .events_animation_track
+                                    .regions
+                                    .len();
+                        }
+                    }
+                }
+            }
         }
 
         let num_rotation_tracks = self.shared_info.animations[current_animation_info.current_animation_id].rotation_tracks.len();
@@ -1401,7 +1519,7 @@ impl RuntimeArmature {
                     track.bone_id,
                     track.regions.iter().find(|&it| {
                         it.start_tick <= current_animation_info.current_animation_ticks &&
-                        it.end_tick >= current_animation_info.current_animation_ticks
+                            it.end_tick >= current_animation_info.current_animation_ticks
                     })
                 )
             };
@@ -1515,13 +1633,13 @@ impl RuntimeArmature {
                             nalgebra::Point3::new(
                                 origin.x + delta.x * l2,
                                 origin.y + delta.y * l2,
-                                1.0
+                                1.0,
                             );
 
                         let upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
                         let lower_rotation =
                             (effector_position.y - knee_position.y).atan2(effector_position.x - knee_position.x)
-                            - upper_rotation - angle_decrement;
+                                - upper_rotation - angle_decrement;
                         (lower_rotation, upper_rotation)
                     };
                     let mut bones_mut = BonesMut { armature: self };
@@ -1608,7 +1726,7 @@ impl RuntimeArmature {
         position_x: f32,
         position_y: f32,
         scale: f32,
-        flip_x: DrawFlip
+        flip_x: DrawFlip,
     ) {
         let x_flipped = match flip_x {
             DrawFlip::None => false,
@@ -1626,13 +1744,13 @@ impl RuntimeArmature {
                     slot.tint_r as f32 / 100.0,
                     slot.tint_g as f32 / 100.0,
                     slot.tint_b as f32 / 100.0,
-                    slot.tint_a as f32 / 100.0
+                    slot.tint_a as f32 / 100.0,
                 );
                 runtime.render_queue.push(RenderQueueEntry {
                     tint: color,
                     drawable_id: id,
                     implicit_draw_order: i,
-                    explicit_draw_order: slot.draw_order
+                    explicit_draw_order: slot.draw_order,
                 });
             }
         }
@@ -1646,7 +1764,7 @@ impl RuntimeArmature {
                 position_x,
                 position_y,
                 scale,
-                x_flipped
+                x_flipped,
             );
         }
     }
@@ -1658,7 +1776,7 @@ impl RuntimeArmature {
                 position_x + origin.x * scale,
                 position_y + origin.y * scale,
                 5.0,
-                RED
+                RED,
             );
         }
     }
@@ -1691,8 +1809,9 @@ pub struct CubicBezierRegion {
     handle_1_x: f32,
     handle_1_y: f32,
     end_x: f32,
-    end_y: f32
+    end_y: f32,
 }
+
 impl CubicBezierRegion {
     pub fn get_approx_bezier(buffer: &mut Vec<Self>, slice: &[f32]) -> [u8; 16] {
         Self::fill_buffer_from_slice(buffer, slice);
@@ -1730,7 +1849,7 @@ impl CubicBezierRegion {
                     handle_1_x: slice[offset + 2],
                     handle_1_y: slice[offset + 3],
                     end_x: right_x,
-                    end_y: right_y
+                    end_y: right_y,
                 }
             )
         }
@@ -1746,14 +1865,14 @@ impl CubicBezierRegion {
                 self.start_x,
                 self.handle_0_x,
                 self.handle_1_x,
-                self.end_x
+                self.end_x,
             ),
             CubicBezierRegion::cubic_resolve(
                 r,
                 self.start_x,
                 self.handle_0_x,
                 self.handle_1_x,
-                self.end_x
+                self.end_x,
             )
         );
         while !(sample_l <= x && sample_r >= x) {
@@ -1764,14 +1883,14 @@ impl CubicBezierRegion {
                 self.start_x,
                 self.handle_0_x,
                 self.handle_1_x,
-                self.end_x
+                self.end_x,
             );
             sample_r = CubicBezierRegion::cubic_resolve(
                 r,
                 self.start_x,
                 self.handle_0_x,
                 self.handle_1_x,
-                self.end_x
+                self.end_x,
             );
         }
         let mut t = (l + r) / 2.0;
@@ -1781,7 +1900,7 @@ impl CubicBezierRegion {
             self.start_x,
             self.handle_0_x,
             self.handle_1_x,
-            self.end_x
+            self.end_x,
         );
         while (sample - x).abs() > EPS {
             t += if sample > x { step } else { -step };
@@ -1791,7 +1910,7 @@ impl CubicBezierRegion {
                 self.start_x,
                 self.handle_0_x,
                 self.handle_1_x,
-                self.end_x
+                self.end_x,
             );
         }
         t
@@ -1804,12 +1923,12 @@ impl CubicBezierRegion {
             self.start_y,
             self.handle_0_y,
             self.handle_1_y,
-            self.end_y
+            self.end_y,
         )
     }
 
     fn cubic_resolve(t: f32, k1: f32, k2: f32, k3: f32, k4: f32) -> f32 {
-        let (a, b, c) = ( k1 + (k2 - k1) * t, k2 + (k3 - k2) * t, k3 + (k4 - k3) * t);
+        let (a, b, c) = (k1 + (k2 - k1) * t, k2 + (k3 - k2) * t, k3 + (k4 - k3) * t);
         let (d, e) = (a + (b - a) * t, b + (c - b) * t);
         d + (e - d) * t
     }
@@ -1819,8 +1938,9 @@ impl CubicBezierRegion {
 pub enum TweenEasing {
     None,
     Linear,
-    FreeCurve([u8; 16])
+    FreeCurve([u8; 16]),
 }
+
 impl TweenEasing {
     pub fn parse(bezier_buffer: &mut Vec<CubicBezierRegion>, tween_easing: f32, curve_samples: &[f32]) -> Self {
         const EPS: f32 = 0.00001;
@@ -1863,7 +1983,7 @@ pub trait Sample: Copy + Debug {
         start_tick: usize,
         end_tick: usize,
         current_tick: usize,
-        tween_easing: &TweenEasing
+        tween_easing: &TweenEasing,
     ) -> Self;
 }
 
@@ -1874,7 +1994,7 @@ pub struct SamplingRegion<T: Sample> {
     pub end_sample: T,
     pub start_tick: usize,
     pub end_tick: usize,
-    pub tween_easing: TweenEasing
+    pub tween_easing: TweenEasing,
 }
 
 impl<T: Sample> SamplingRegion<T> {
@@ -1884,15 +2004,16 @@ impl<T: Sample> SamplingRegion<T> {
             self.start_tick,
             self.end_tick,
             current_tick,
-            &self.tween_easing
+            &self.tween_easing,
         )
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct RotationSample {
-    pub theta: f32
+    pub theta: f32,
 }
+
 impl Sample for RotationSample {
     fn interpolate(
         &self,
@@ -1900,7 +2021,7 @@ impl Sample for RotationSample {
         start_tick: usize,
         end_tick: usize,
         current_tick: usize,
-        tween_easing: &TweenEasing
+        tween_easing: &TweenEasing,
     ) -> Self {
         debug_assert!(start_tick <= end_tick);
         let a = if end_tick == start_tick {
@@ -1917,8 +2038,9 @@ impl Sample for RotationSample {
 #[derive(Copy, Clone, Debug)]
 pub struct TransitionSample {
     pub x: f32,
-    pub y: f32
+    pub y: f32,
 }
+
 impl Sample for TransitionSample {
     fn interpolate(
         &self,
@@ -1926,7 +2048,7 @@ impl Sample for TransitionSample {
         start_tick: usize,
         end_tick: usize,
         current_tick: usize,
-        tween_easing: &TweenEasing
+        tween_easing: &TweenEasing,
     ) -> Self {
         debug_assert!(start_tick <= end_tick);
         let a = if end_tick == start_tick {
@@ -1936,7 +2058,7 @@ impl Sample for TransitionSample {
         };
         Self {
             x: tween_easing.interpolate(self.x, other.x, a),
-            y: tween_easing.interpolate(self.y, other.y, a)
+            y: tween_easing.interpolate(self.y, other.y, a),
         }
     }
 }
@@ -1944,8 +2066,9 @@ impl Sample for TransitionSample {
 #[derive(Copy, Clone, Debug)]
 pub struct ScalingSample {
     pub scale_x: f32,
-    pub scale_y: f32
+    pub scale_y: f32,
 }
+
 impl Sample for ScalingSample {
     fn interpolate(
         &self,
@@ -1953,7 +2076,7 @@ impl Sample for ScalingSample {
         start_tick: usize,
         end_tick: usize,
         current_tick: usize,
-        tween_easing: &TweenEasing
+        tween_easing: &TweenEasing,
     ) -> Self {
         debug_assert!(start_tick <= end_tick);
         let a = if end_tick == start_tick {
@@ -1963,7 +2086,7 @@ impl Sample for ScalingSample {
         };
         Self {
             scale_x: tween_easing.interpolate(self.scale_x, other.scale_x, a),
-            scale_y: tween_easing.interpolate(self.scale_y, other.scale_y, a)
+            scale_y: tween_easing.interpolate(self.scale_y, other.scale_y, a),
         }
     }
 }
@@ -1971,38 +2094,67 @@ impl Sample for ScalingSample {
 #[derive(Debug)]
 pub struct AnimationTrack<T: Sample> {
     pub bone_id: usize,
-    pub regions: Vec<SamplingRegion<T>>
+    pub regions: Vec<SamplingRegion<T>>,
 }
 
 #[derive(Debug)]
 pub struct SlotDisplayIdRegion {
     pub display_id: Option<usize>,
     pub start_tick: usize,
-    pub end_tick: usize
+    pub end_tick: usize,
 }
 
 #[derive(Debug)]
 pub struct DisplayIdAnimationTrack {
     pub slot_id: usize,
-    pub regions: Vec<SlotDisplayIdRegion>
+    pub regions: Vec<SlotDisplayIdRegion>,
 }
 
 #[derive(Debug)]
 pub struct DrawOrderEntry {
     pub slot_id: usize,
-    pub draw_order: i32
+    pub draw_order: i32,
 }
 
 #[derive(Debug)]
 pub struct DrawOrderRegion {
     pub entries: Vec<DrawOrderEntry>,
     pub start_tick: usize,
-    pub end_tick: usize
+    pub end_tick: usize,
 }
 
 #[derive(Debug)]
 pub struct DrawOrderAnimationTrack {
-    pub regions: Vec<DrawOrderRegion>
+    pub regions: Vec<DrawOrderRegion>,
+}
+
+#[derive(Clone, Debug)]
+pub enum DragonBonesEvent {
+    GotoAndPlay { animation_name: Arc<String> },
+    PlaySound { sound_name: Arc<String> },
+    Custom {
+        event_name: Arc<String>,
+        user_int: Option<i32>,
+        user_float: Option<f32>,
+        user_string: Option<Arc<String>>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct DragonBonesEventsEntry {
+    pub events: Vec<DragonBonesEvent>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DragonBonesEventsRegion {
+    pub entry: DragonBonesEventsEntry,
+    pub start_tick: usize,
+    pub end_tick: usize,
+}
+
+#[derive(Debug)]
+pub struct EventsAnimationTrack {
+    pub regions: Vec<DragonBonesEventsRegion>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -2010,8 +2162,9 @@ pub struct TintSample {
     pub a: i32,
     pub r: i32,
     pub g: i32,
-    pub b: i32
+    pub b: i32,
 }
+
 impl Sample for TintSample {
     fn interpolate(
         &self,
@@ -2019,7 +2172,7 @@ impl Sample for TintSample {
         start_tick: usize,
         end_tick: usize,
         current_tick: usize,
-        tween_easing: &TweenEasing
+        tween_easing: &TweenEasing,
     ) -> Self {
         debug_assert!(start_tick <= end_tick);
         let a = if end_tick == start_tick {
@@ -2039,7 +2192,7 @@ impl Sample for TintSample {
                 .clamp(0.0, 100.0) as i32,
             b: tween_easing
                 .interpolate(self.b as f32, other.b as f32, a)
-                .clamp(0.0, 100.0) as i32
+                .clamp(0.0, 100.0) as i32,
         }
     }
 }
@@ -2047,7 +2200,7 @@ impl Sample for TintSample {
 #[derive(Debug)]
 pub struct ColorTintAnimationTrack {
     pub slot_id: usize,
-    pub regions: Vec<SamplingRegion<TintSample>>
+    pub regions: Vec<SamplingRegion<TintSample>>,
 }
 
 #[derive(Debug)]
@@ -2060,7 +2213,8 @@ pub struct AnimationData {
     pub scaling_tracks: Vec<AnimationTrack<ScalingSample>>,
     pub display_id_animation_tracks: Vec<DisplayIdAnimationTrack>,
     pub color_tint_animation_tracks: Vec<ColorTintAnimationTrack>,
-    pub draw_order_animation_track: DrawOrderAnimationTrack
+    pub draw_order_animation_track: DrawOrderAnimationTrack,
+    pub events_animation_track: EventsAnimationTrack,
 }
 
 pub struct DragonBonesData {
@@ -2119,7 +2273,7 @@ impl<'a> BonesMut<'a> {
         position_x: f32,
         position_y: f32,
         scale: f32,
-        x_flip: DrawFlip
+        x_flip: DrawFlip,
     ) -> (f32, f32) {
         self.armature.get_bone_world_position(bone_id, position_x, position_y, scale, x_flip)
     }
@@ -2127,7 +2281,7 @@ impl<'a> BonesMut<'a> {
     pub fn get_bone_world_orientation(
         &self,
         bone_id: usize,
-        x_flip: DrawFlip
+        x_flip: DrawFlip,
     ) -> (f32, f32) {
         self.armature.get_bone_world_orientation(bone_id, x_flip)
     }
@@ -2157,8 +2311,9 @@ impl<'a> IndexMut<usize> for BonesMut<'a> {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 pub enum Cap {
     CappedBy(f32),
-    Uncapped
+    Uncapped,
 }
+
 impl std::cmp::PartialOrd for Cap {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (*self, *other) {
@@ -2172,45 +2327,45 @@ impl std::cmp::PartialOrd for Cap {
 
 #[derive(Clone, Debug, Deserialize)]
 pub enum AnimationAction<TParam, TOutputState>
-where
-    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+    where
+        TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
 {
     Play(TOutputState),
-    PlayBySelector{
+    PlayBySelector {
         inner_fade_out_in_frames: usize,
         param: TParam,
-        cases: Vec<(TOutputState, Cap)>
-    }
+        cases: Vec<(TOutputState, Cap)>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AnimationState<TParam, TOutputState>
-where
-    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+    where
+        TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
 {
     pub fade_out_in_frames: usize,
-    pub action: AnimationAction<TParam, TOutputState>
+    pub action: AnimationAction<TParam, TOutputState>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AnimationStateMachineConfig<TParam, TInputState, TOutputState>
-where
-    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+    where
+        TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
 {
     pub start_state: TInputState,
     pub params: HashMap<TParam, f32>,
-    pub states: HashMap<TInputState, AnimationState<TParam, TOutputState>>
+    pub states: HashMap<TInputState, AnimationState<TParam, TOutputState>>,
 }
 
 pub struct AnimationStateMachine<TParam, TInputState, TOutputState>
-where
-    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+    where
+        TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
 {
     config: AnimationStateMachineConfig<TParam, TInputState, TOutputState>,
     input_state: TInputState,
@@ -2218,10 +2373,10 @@ where
 }
 
 impl<TParam, TInputState, TOutputState> AnimationStateMachine<TParam, TInputState, TOutputState>
-where
-    TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
-    TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
+    where
+        TParam: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TInputState: Hash + Eq + Copy + Clone + Send + Sync + Sized,
+        TOutputState: Hash + Eq + Copy + Clone + Send + Sync + Sized + Into<&'static str>
 {
     pub fn new(config: AnimationStateMachineConfig<TParam, TInputState, TOutputState>) -> Option<Self> {
         let mut config = config;
@@ -2250,7 +2405,7 @@ where
                 } else {
                     let uncapped = cases
                         .iter()
-                        .find(|it| if let Cap::Uncapped = it.1 {true} else {false})?;
+                        .find(|it| if let Cap::Uncapped = it.1 { true } else { false })?;
                     uncapped.0
                 }
             }
@@ -2258,7 +2413,7 @@ where
         Some(Self {
             config,
             input_state,
-            output_state
+            output_state,
         })
     }
     pub fn set_input_state(&mut self, state: TInputState) {
@@ -2274,7 +2429,7 @@ where
         let state = self.config.states.get(&self.input_state)?;
         let (fade_out, output_state) = match &state.action {
             AnimationAction::Play(value) => (state.fade_out_in_frames, *value),
-            AnimationAction::PlayBySelector { inner_fade_out_in_frames, param, cases,  } => {
+            AnimationAction::PlayBySelector { inner_fade_out_in_frames, param, cases, } => {
                 let param_value = self.config.params.get(param)?;
                 let found_capped = cases
                     .iter()
@@ -2283,12 +2438,12 @@ where
                         Cap::Uncapped => false
                     });
                 if let Some(capped) = found_capped {
-                    ( *inner_fade_out_in_frames, capped.0 )
+                    (*inner_fade_out_in_frames, capped.0)
                 } else {
                     let uncapped = cases
                         .iter()
-                        .find(|it| if let Cap::Uncapped = it.1 {true} else {false})?;
-                    ( *inner_fade_out_in_frames, uncapped.0 )
+                        .find(|it| if let Cap::Uncapped = it.1 { true } else { false })?;
+                    (*inner_fade_out_in_frames, uncapped.0)
                 }
             }
         };

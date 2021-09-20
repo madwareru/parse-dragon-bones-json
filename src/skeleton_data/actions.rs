@@ -14,9 +14,6 @@ pub struct RawActionData {
     #[serde(rename = "bone")]
     #[serde(default)]
     pub bone_name: String,
-    #[serde(rename = "slot")]
-    #[serde(default)]
-    pub slot_name: String,
     #[serde(rename = "ints")]
     #[serde(default)]
     pub user_ints: Vec<i32>,
