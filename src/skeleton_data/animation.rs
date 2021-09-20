@@ -77,25 +77,13 @@ pub struct RawScaleFrame {
 pub struct RawGeneralFrame {
     #[serde(default = "default_one_frame")]
     pub duration: u32,
+    #[serde(rename = "action")]
     #[serde(default)]
-    pub curve: Vec<f32>,
-    #[serde(default = "default_no_easing")]
-    pub tween_easing: f32,
+    pub goto_and_play_action: String,
     #[serde(default)]
-    pub transform: super::transform::RawTransform,
-    #[serde(rename = "tweenRotate")]
-    #[serde(default)]
-    pub clockwise: u32,
-    #[serde(default)]
-    pub event: Vec<super::actions::RawActionData>,
-    #[serde(default)]
-    pub sound: Vec<super::actions::RawActionData>,
-    #[serde(default)]
-    pub action: Vec<super::actions::RawActionData>,
+    pub sound: String,
     #[serde(default)]
     pub events: Vec<super::actions::RawActionData>,
-    #[serde(default)]
-    pub actions: Vec<super::actions::RawActionData>,
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
