@@ -65,7 +65,6 @@ async fn main() {
     let dragon_bones_data = DragonBonesData::load(skeleton_bytes, atlas_bytes, texture_bytes);
     let mut mercenary_armature = dragon_bones_data.instantiate_armature("Mercenary").unwrap();
     let mut crosshair_armature = dragon_bones_data.instantiate_armature("Crosshair").unwrap();
-    let mut strange_armature = dragon_bones_data.instantiate_armature("FlipDrawOrder").unwrap();
 
     let gun_bone_id = mercenary_armature.get_bone_by_name("gun").unwrap();
     let head_bone_id = mercenary_armature.get_bone_by_name("Head").unwrap();
@@ -273,9 +272,6 @@ async fn main() {
 
             bullet_arena[bullets[i]].position = (pos_x + vel_x * dt, pos_y + vel_y * dt);
         }
-
-        strange_armature.update_animation(dt);
-        strange_armature.draw(&mut dragon_bones_runtime, 200.0, 200.0, 1.0, DrawFlip::None);
 
         crosshair_armature.update_animation_ex(dt, |bones| {
             bones.set_bone_world_rotation(crosshair_bone_id, -get_time() as f32);
