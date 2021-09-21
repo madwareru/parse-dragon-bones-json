@@ -888,7 +888,7 @@ impl RuntimeArmature {
                         }
 
                         tick_now = 0;
-                        for event_frame in anim.general_timeline.iter() {
+                        for (ix, event_frame) in anim.general_timeline.iter().enumerate() {
                             let mut entry = DragonBonesEventsEntry { events: Vec::new() };
                             if !event_frame.goto_and_play_action.is_empty() {
                                 entry.events.push(DragonBonesEvent::GotoAndPlay {
@@ -922,14 +922,21 @@ impl RuntimeArmature {
                                 entry.events.push(event);
                             }
 
+                            let is_last_ix = ix == anim.general_timeline.len()-1;
+
+                            let end_tick = if !is_last_ix {
+                                tick_now + event_frame.duration as usize
+                            } else {
+                                animation_data.duration_in_ticks
+                            };
                             animation_data.events_animation_track.regions.push(
                                 DragonBonesEventsRegion {
                                     entry,
                                     start_tick: tick_now,
-                                    end_tick: tick_now + event_frame.duration as usize,
+                                    end_tick
                                 }
                             );
-                            tick_now += event_frame.duration as usize;
+                            tick_now = end_tick;
                         }
                     }
                     for bone_timeline in anim.bone_timelines.iter() {
@@ -1138,7 +1145,7 @@ impl RuntimeArmature {
                     current_animation_ticks: 0,
                 };
 
-                let mut next_event_frames = vec![0; animations.len()];
+                let next_event_frames = vec![0; animations.len()];
                 (
                     name.clone(),
                     Self {
@@ -1461,49 +1468,53 @@ impl RuntimeArmature {
             }
 
             if num_event_regions > 0 {
-                let next_event_frame = self.next_event_frames[current_animation_info.current_animation_id];
-                let (is_last, index) = {
+                let mut next_event_frame = self.next_event_frames[current_animation_info.current_animation_id];
+                let index = {
                     let track = &self.shared_info.animations[current_animation_info.current_animation_id].events_animation_track;
-                    if current_animation_info.current_animation_ticks > track.regions[track.regions.len() - 1].end_tick {
-                        (
-                            true,
-                            Some(track.regions.len() - 1)
-                        )
-                    } else {
-                        (
-                            false,
-                            track.regions.iter().enumerate().find(|&(_, it)| {
-                                it.start_tick <= current_animation_info.current_animation_ticks &&
-                                    it.end_tick >= current_animation_info.current_animation_ticks
-                            }).map(|it| it.0)
-                        )
-                    }
+                    track.regions.iter().enumerate().find(|&(_, it)| {
+                        it.start_tick <= current_animation_info.current_animation_ticks &&
+                            it.end_tick >= current_animation_info.current_animation_ticks
+                    }).map(|it| it.0)
                 };
-                if !(next_event_frame == 0 && is_last) {
-                    if let Some(index) = index {
-                        if index >= next_event_frame {
-                            for i in next_event_frame..index + 1 {
-                                let current_frame = &self
-                                    .shared_info
-                                    .animations[current_animation_info.current_animation_id]
-                                    .events_animation_track
-                                    .regions[i];
 
-                                for event in current_frame.entry.events.iter() {
-                                    if self.event_queue.len() == Self::MAX_EVENT_QUEUE_SIZE {
-                                        self.event_queue.pop_front();
-                                    }
-                                    self.event_queue.push_back(event.clone());
+                if let Some(index) = index {
+                    if index < num_event_regions-1 && next_event_frame >= num_event_regions {
+                        next_event_frame = 0;
+                    }
+                    if index >= next_event_frame {
+                        for i in next_event_frame..index + 1 {
+                            let current_frame = &self
+                                .shared_info
+                                .animations[current_animation_info.current_animation_id]
+                                .events_animation_track
+                                .regions[i];
+
+                            for event in current_frame.entry.events.iter() {
+                                if self.event_queue.len() == Self::MAX_EVENT_QUEUE_SIZE {
+                                    self.event_queue.pop_front();
                                 }
+                                self.event_queue.push_back(event.clone());
                             }
-                            self.next_event_frames[current_animation_info.current_animation_id] =
-                                (index + 1) % self
-                                    .shared_info
-                                    .animations[current_animation_info.current_animation_id]
-                                    .events_animation_track
-                                    .regions
-                                    .len();
                         }
+                        let next_event_frame = index + 1;
+
+                        self.next_event_frames[current_animation_info.current_animation_id] =
+                            next_event_frame;
+                    } else {
+                        println!(
+                            "Where I am? Next event frame: {}, index: {}, overall regions: {}",
+                            next_event_frame,
+                            index,
+                            self.shared_info
+                                .animations[current_animation_info.current_animation_id]
+                                .events_animation_track
+                                .regions
+                                .len()
+                        );
+                        println!("{:?}", self.shared_info
+                            .animations[current_animation_info.current_animation_id]
+                            .events_animation_track
+                            .regions);
                     }
                 }
             }
