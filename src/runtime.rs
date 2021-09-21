@@ -969,15 +969,29 @@ impl RuntimeArmature {
                                         }
                                     );
                                 } else {
+                                    let mut last_clockwise = false;
                                     for i in 0..bone_timeline.rotation_frames.len() - 1 {
                                         let frame = &bone_timeline.rotation_frames[i];
                                         let next_frame = &bone_timeline.rotation_frames[i + 1];
-                                        let rotation = bone_vec[bone_id].transform.rotation
-                                            + frame.rotate.to_radians()
-                                            * if frame.clockwise == 1 { -1.0 } else { 1.0 };
-                                        let next_rotation = bone_vec[bone_id].transform.rotation
-                                            + next_frame.rotate.to_radians()
-                                            * if next_frame.clockwise == 1 { -1.0 } else { 1.0 };
+
+                                        let rotation = if last_clockwise {
+                                            animation_track
+                                                .regions[animation_track.regions.len()-1]
+                                                .end_sample
+                                                .theta
+                                        } else {
+                                            bone_vec[bone_id].transform.rotation
+                                                + frame.rotate.to_radians()
+                                        };
+
+                                        let next_rotation = if frame.clockwise != 0 {
+                                            last_clockwise = true;
+                                            rotation + std::f32::consts::PI * frame.clockwise as f32
+                                        } else {
+                                            last_clockwise = false;
+                                            bone_vec[bone_id].transform.rotation
+                                                + next_frame.rotate.to_radians()
+                                        };
 
                                         animation_track.regions.push(
                                             SamplingRegion {

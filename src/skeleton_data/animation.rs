@@ -3,6 +3,8 @@ use crate::shared_types::{default_one, default_one_frame, default_name, default_
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RawAnimationData {
+    //we are not support animation of FFD and IK parameters yet, but anything else should work just fine
+
     #[serde(default = "default_name")]
     pub name: String,
     #[serde(default)]
@@ -25,7 +27,6 @@ pub struct RawAnimationData {
     #[serde(rename = "slot")]
     #[serde(default)]
     pub slot_timelines: Vec<RawSlotTimeline>,
-    //we are not support animation of FFD and IK parameters yet
     #[serde(rename = "bone")]
     #[serde(default)]
     pub bone_timelines: Vec<RawBoneTimeline>
@@ -56,7 +57,7 @@ pub struct RawRotationFrame {
     #[serde(default)]
     pub rotate: f32,
     #[serde(default)]
-    pub clockwise: u32,
+    pub clockwise: i32,
 }
 
 #[derive(Clone, Deserialize, Debug)]
