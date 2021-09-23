@@ -1615,8 +1615,17 @@ impl RuntimeArmature {
                     let bone_lower = &self.bones[bone_id];
                     let bone_upper = &self.bones[upper_bone_id];
 
-                    let l1: f32 = bone_lower.length;
-                    let l2: f32 = bone_upper.length;
+                    let origin_upper = self.pose_matrices[upper_bone_id] *
+                        nalgebra::Point3::new(0.0, 0.0, 1.0);
+                    let dir_upper = self.pose_matrices[upper_bone_id] *
+                        nalgebra::Point3::new(bone_upper.length, 0.0, 1.0);
+                    let l2 = (dir_upper - origin_upper).magnitude();
+
+                    let origin_lower = self.pose_matrices[bone_id] *
+                        nalgebra::Point3::new(0.0, 0.0, 1.0);
+                    let dir_lower = self.pose_matrices[bone_id] *
+                        nalgebra::Point3::new(bone_lower.length, 0.0, 1.0);
+                    let l1 = (dir_lower - origin_lower).magnitude();
 
                     let origin: nalgebra::Point3<f32> = self.pose_matrices[upper_bone_id] *
                         nalgebra::Point3::new(0.0, 0.0, 1.0);
@@ -1633,11 +1642,12 @@ impl RuntimeArmature {
                         }
                     }
 
-                    let (lower_rotation, upper_rotation) = if delta.magnitude() > l1 + l2 {
+                    let k1 = delta.magnitude();
+
+                    let (lower_rotation, upper_rotation) = if k1 > l1 + l2 {
                         let upper_rotation = delta.y.atan2(delta.x) - angle_decrement;
                         (0.0, upper_rotation)
                     } else {
-                        let k1 = delta.magnitude();
                         let k2: f32 = l1 * l1 - l2 * l2;
 
                         let d = (k1 * k1 - k2) / (2.0 * k1);

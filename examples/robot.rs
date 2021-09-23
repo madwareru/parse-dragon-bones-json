@@ -4,7 +4,8 @@ use macroquad::miniquad::KeyCode;
 
 #[macroquad::main("robot")]
 async fn main() {
-    //todo: figure out what is wrong with it and fix!
+    // ik for leg foots and arm hand are broken here, since we not yet support situation
+    // when solving of ik chain depends on solving of another chain
 
     let texture_bytes = include_bytes!("../src/test_assets/robot_tex.png");
     let atlas_bytes = include_bytes!("../src/test_assets/robot_tex.json");
@@ -26,6 +27,8 @@ async fn main() {
         runtime_armature.update_animation(get_frame_time());
 
         runtime_armature.draw(&mut runtime, screen_center_x, screen_center_y, SCALE, DrawFlip::None);
+        runtime_armature.draw_bones(screen_center_x, screen_center_y, SCALE);
+        runtime_armature.draw_ik_effectors(screen_center_x, screen_center_y, SCALE);
         next_frame().await;
     }
 }
